@@ -234,6 +234,14 @@ public final class GcpResource extends NuclrResource {
 			throw new IOException("Not a downloadable GCS object: " + getName());
 		}
 
+		// Reuse a previous download of the same object, even across listing rebuilds.
+		String gsKey = bucket + "/" + key;
+		Path cached = GcsTempFiles.cached(gsKey);
+		if (cached != null) {
+			setPath(cached);
+			return cached;
+		}
+
 		Path temp = Files.createTempFile("nuclr-gcs-", "-" + sanitize(getName()));
 		GcsObjectDownloader.Result result = new GcsObjectDownloader().downloadToFile(bucket, key, temp);
 		if (result instanceof GcsObjectDownloader.Result.Err err) {
@@ -241,7 +249,7 @@ public final class GcpResource extends NuclrResource {
 			throw new IOException("Failed to download gs://" + bucket + "/" + key + ": " + err.error());
 		}
 		setPath(temp);
-		GcsTempFiles.register(temp);
+		GcsTempFiles.register(gsKey, temp);
 		return temp;
 	}
 

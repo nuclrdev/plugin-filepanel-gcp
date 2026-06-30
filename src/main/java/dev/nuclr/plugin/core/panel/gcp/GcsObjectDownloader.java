@@ -1,16 +1,25 @@
 package dev.nuclr.plugin.core.panel.gcp;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
+import java.nio.file.StandardCopyOption;
+import java.time.Duration;
 
 /**
- * Copies a Cloud Storage object to a local file via {@code gcloud storage cp}. The object is
- * streamed straight to disk (never buffered in memory), so even a large file can be downloaded
- * for the host's quick-view providers to render. No Swing.
+ * Downloads a Cloud Storage object to a local file via the GCS JSON API
+ * ({@code GET .../o/{key}?alt=media}) using a cached {@link GcsAccessToken}.
+ *
+ * <p>This deliberately avoids {@code gcloud storage cp}, whose per-invocation Python startup
+ * (~5s) dominated quick-view latency. A warm download here is a single HTTPS GET (~0.4s),
+ * streamed straight to disk so memory stays bounded. No Swing.
  */
 final class GcsObjectDownloader {
 
@@ -20,65 +29,78 @@ final class GcsObjectDownloader {
         record Err(GcpError error) implements Result {}
     }
 
-    private static final int TIMEOUT_SECONDS = 120;
+    private static final HttpClient HTTP = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(15))
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build();
+
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(120);
 
     /**
-     * Downloads {@code gs://bucket/key} into {@code destination}, overwriting it.
-     *
-     * @return {@link Result.Ok} on success, or {@link Result.Err} with a classified error
+     * Downloads {@code gs://bucket/key} into {@code destination}, overwriting it. Refreshes the
+     * access token once and retries on a 401.
      */
     Result downloadToFile(String bucket, String key, Path destination) {
-        String url = "gs://" + bucket + "/" + key;
-        Process process;
-        try {
-            process = new ProcessBuilder(List.of(
-                    GcloudCli.executable(), "storage", "cp", url, destination.toString())).start();
-        } catch (IOException e) {
-            return new Result.Err(new GcpError.GcloudNotFound());
-        }
-
-        // Drain both streams so a chatty gcloud can't block on a full pipe.
-        var stderrRef = new AtomicReference<String>("");
-        Thread stderrDrain = Thread.ofVirtual().start(() -> {
+        for (int attempt = 0; attempt < 2; attempt++) {
+            String token;
             try {
-                stderrRef.set(new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8));
-            } catch (IOException ignored) {
+                token = GcsAccessToken.get(attempt == 1);
+            } catch (IOException e) {
+                return new Result.Err(new GcpError.CommandFailed(e.getMessage()));
             }
-        });
-        Thread stdoutDrain = Thread.ofVirtual().start(() -> {
+
+            HttpRequest request = HttpRequest.newBuilder(mediaUri(bucket, key))
+                    .timeout(REQUEST_TIMEOUT)
+                    .header("Authorization", "Bearer " + token)
+                    .GET()
+                    .build();
             try {
-                process.getInputStream().readAllBytes();
-            } catch (IOException ignored) {
+                HttpResponse<InputStream> response = HTTP.send(request, HttpResponse.BodyHandlers.ofInputStream());
+                int status = response.statusCode();
+                if (status == 200) {
+                    try (InputStream body = response.body()) {
+                        Files.copy(body, destination, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                    return new Result.Ok();
+                }
+
+                String detail = drain(response.body());
+                if (status == 401 && attempt == 0) {
+                    GcsAccessToken.invalidate();
+                    continue; // token expired mid-session; refresh and retry once
+                }
+                return new Result.Err(classify(status, detail));
+            } catch (IOException e) {
+                return new Result.Err(new GcpError.CommandFailed(e.getMessage()));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return new Result.Err(new GcpError.CommandFailed("Interrupted while downloading"));
             }
-        });
-
-        boolean finished;
-        try {
-            finished = process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            process.destroyForcibly();
-            return new Result.Err(new GcpError.CommandFailed("Interrupted while downloading"));
         }
-        if (!finished) {
-            process.destroyForcibly();
-            return new Result.Err(new GcpError.Timeout());
-        }
-
-        joinQuietly(stderrDrain);
-        joinQuietly(stdoutDrain);
-
-        if (process.exitValue() != 0) {
-            return new Result.Err(GcloudErrors.classify(stderrRef.get()));
-        }
-        return new Result.Ok();
+        return new Result.Err(new GcpError.NotAuthenticated());
     }
 
-    private static void joinQuietly(Thread thread) {
-        try {
-            thread.join(TimeUnit.SECONDS.toMillis(2));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+    /** {@code https://storage.googleapis.com/storage/v1/b/{bucket}/o/{key}?alt=media} (key fully encoded). */
+    private static URI mediaUri(String bucket, String key) {
+        String encodedKey = URLEncoder.encode(key, StandardCharsets.UTF_8).replace("+", "%20");
+        return URI.create("https://storage.googleapis.com/storage/v1/b/" + bucket + "/o/" + encodedKey + "?alt=media");
+    }
+
+    private static GcpError classify(int status, String body) {
+        return switch (status) {
+            case 401, 403 -> new GcpError.NotAuthenticated();
+            case 404 -> new GcpError.CommandFailed("Object not found (404).");
+            default -> new GcpError.CommandFailed("HTTP " + status + (body.isBlank() ? "" : ": " + body));
+        };
+    }
+
+    /** Read a short, bounded snippet of an error body for diagnostics. */
+    private static String drain(InputStream in) {
+        try (in) {
+            byte[] bytes = in.readNBytes(1024);
+            return new String(bytes, StandardCharsets.UTF_8).strip();
+        } catch (IOException e) {
+            return "";
         }
     }
 }

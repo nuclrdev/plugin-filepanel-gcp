@@ -421,6 +421,10 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 		var data = newObjectData(sink);
 
+		// The user is heading toward objects; warm the access token now so the first quick-view
+		// download is a plain HTTPS GET rather than also paying the one-time gcloud token fetch.
+		warmAccessToken();
+
 		// Row 0 is always ".." (up one prefix level, or back to the bucket list at the root).
 		pagerRows.clear();
 		NuclrResource parent = GcpResource.objectParent(projectId, bucket, prefix);
@@ -510,6 +514,17 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 	private static String pagerKey(String bucket, String prefix) {
 		return bucket + ' ' + prefix;
+	}
+
+	/** Pre-fetch the GCS access token off-thread so it is cached before the first quick view. */
+	private static void warmAccessToken() {
+		Thread.ofVirtual().start(() -> {
+			try {
+				GcsAccessToken.get(false);
+			} catch (IOException ignored) {
+				// Best-effort warm-up; the real download will surface any token error.
+			}
+		});
 	}
 
 	/** Display label for an object "directory": the bucket name at the root, else the last segment. */
