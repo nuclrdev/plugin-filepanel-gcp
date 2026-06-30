@@ -25,6 +25,11 @@ public class GcloudCli {
                     ? "gcloud.cmd"
                     : "gcloud";
 
+    /** The OS-appropriate gcloud executable name, for callers that launch gcloud directly. */
+    static String executable() {
+        return GCLOUD;
+    }
+
     /** Raw result of a gcloud invocation. */
     public record CliResult(String stdout, String stderr, int exitCode) {}
 

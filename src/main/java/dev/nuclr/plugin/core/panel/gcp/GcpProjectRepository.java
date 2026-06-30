@@ -2,7 +2,6 @@ package dev.nuclr.plugin.core.panel.gcp;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Orchestrates {@link GcloudCli} and {@link GcpProjectParser} to produce a typed result.
@@ -37,12 +36,7 @@ public class GcpProjectRepository {
         }
 
         if (cliResult.exitCode() != 0) {
-            String stderr = cliResult.stderr().strip();
-            if (isAuthError(stderr)) {
-                return new Result.Err(new GcpError.NotAuthenticated());
-            }
-            String truncated = stderr.length() > 500 ? stderr.substring(0, 500) : stderr;
-            return new Result.Err(new GcpError.CommandFailed(truncated));
+            return new Result.Err(GcloudErrors.classify(cliResult.stderr()));
         }
 
         List<GcpProject> projects;
@@ -58,18 +52,5 @@ public class GcpProjectRepository {
         }
 
         return new Result.Ok(projects);
-    }
-
-    /**
-     * Heuristically detects authentication errors from gcloud's stderr.
-     * Covers unauthenticated, expired tokens, and missing active account.
-     */
-    private static boolean isAuthError(String stderr) {
-        String lower = stderr.toLowerCase(Locale.ROOT);
-        return lower.contains("auth login")
-                || lower.contains("not currently have an active account")
-                || lower.contains("invalid_grant")
-                || lower.contains("token has been expired")
-                || (lower.contains("please run") && lower.contains("gcloud auth"));
     }
 }

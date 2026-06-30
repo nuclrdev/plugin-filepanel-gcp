@@ -1,6 +1,7 @@
 package dev.nuclr.plugin.core.panel.gcp;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -55,6 +56,12 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			"Name", "Created", "Location type", "Location",
 			"Default storage class", "Last modified", "Public Access");
 
+	/** Columns shown for the object listing inside a bucket. */
+	private static final List<String> OBJECT_COLUMNS = List.of("Name", "Size", "Storage class", "Updated");
+
+	/** How many objects to load per page (each "Load more…" fetches one more page). */
+	private static final int OBJECT_PAGE_SIZE = 1000;
+
 	/** How long a successful project/bucket list stays valid before {@code gcloud} is re-run. */
 	private static final long CACHE_TTL_MS = 5 * 60_000L;
 
@@ -78,6 +85,12 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	/** Per-project bucket cache, keyed by project id. */
 	private record CachedBuckets(List<GcsBucket> buckets, long atMs) {}
 	private final Map<String, CachedBuckets> bucketCache = new ConcurrentHashMap<>();
+
+	// Active object listing: a live, lazily-consumed gcloud stream plus the rows shown so far.
+	// One listing is active at a time; navigating away closes the pager (see openResource).
+	private GcsObjectPager pager;
+	private String pagerKey;
+	private final List<NuclrResource> pagerRows = new ArrayList<>();
 
 	// -------------------------------------------------------------------------
 	// Plugin metadata
@@ -177,12 +190,15 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		context = null;
 		cachedProjects = null;
 		bucketCache.clear();
+		closePager();
+		GcsTempFiles.cleanup();
 		log.info("GCP file panel plugin unloaded");
 	}
 
 	@Override
 	public void closeResource() {
-		// No long-lived session to close; gcloud is invoked per listing.
+		// Release any live object-listing stream; project/bucket listings are per-call.
+		closePager();
 	}
 
 	// -------------------------------------------------------------------------
@@ -252,6 +268,12 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			return null;
 		}
 
+		// Any navigation other than "Load more…" abandons the active object listing, so
+		// release its held gcloud process before opening something else.
+		if (!GcpResource.isLoadMore(resourceToOpen)) {
+			closePager();
+		}
+
 		if (GcpResource.isRoot(resourceToOpen)) {
 			// Adopt a clean root (the incoming resource may be the ".." entry) so the
 			// location bar / window title don't show "..".
@@ -268,13 +290,34 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		}
 
 		if (GcpResource.isService(resourceToOpen)) {
-			this.currentResource = resourceToOpen;
+			// Rebuild a clean service node (the incoming resource may be the ".." back from a
+			// bucket) so the location bar shows the service name rather than "..".
 			String projectId = GcpResource.projectId(resourceToOpen);
 			if (GcpResource.SERVICE_GCS.equals(GcpResource.serviceType(resourceToOpen))) {
+				this.currentResource = GcpResource.gcsService(projectId);
 				return listBuckets(projectId, cancelled, sink);
 			}
+			this.currentResource = GcpResource.pubsubService(projectId);
 			// Other services (e.g. Pub/Sub) are not browsable yet; show only the "..".
 			return serviceStub(projectId, sink);
+		}
+
+		// Entering a bucket (prefix "") or a sub-folder: list its immediate objects/folders.
+		if (GcpResource.isBucket(resourceToOpen) || GcpResource.isObjectDir(resourceToOpen)) {
+			String projectId = GcpResource.projectId(resourceToOpen);
+			String bucket = GcpResource.bucketName(resourceToOpen);
+			String prefix = GcpResource.objectPrefix(resourceToOpen);
+			this.currentResource = GcpResource.objectDir(projectId, bucket, prefix, locationName(bucket, prefix));
+			return listObjects(projectId, bucket, prefix, cancelled, sink);
+		}
+
+		// "Load more…": fetch the next page of the current listing and re-render it.
+		if (GcpResource.isLoadMore(resourceToOpen)) {
+			String projectId = GcpResource.projectId(resourceToOpen);
+			String bucket = GcpResource.bucketName(resourceToOpen);
+			String prefix = GcpResource.objectPrefix(resourceToOpen);
+			this.currentResource = GcpResource.objectDir(projectId, bucket, prefix, locationName(bucket, prefix));
+			return loadMoreObjects(projectId, bucket, prefix, cancelled, sink);
 		}
 
 		return null;
@@ -346,7 +389,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			if (cancelled != null && cancelled.get()) {
 				break;
 			}
-			add(data, sink, GcpResource.bucket(bucket));
+			add(data, sink, GcpResource.bucket(projectId, bucket));
 		}
 		log.info("GCS bucket listing for {}: {} bucket(s)", projectId, buckets.size());
 		return data;
@@ -363,6 +406,120 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 		add(data, sink, GcpResource.parentToProject(projectId));
 		return data;
+	}
+
+	// -------------------------------------------------------------------------
+	// Object listing (paged, streamed)
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Lists the immediate objects and sub-folders of {@code gs://bucket/<prefix>}, loading
+	 * only the first page. A fresh gcloud stream is opened and held for subsequent pages.
+	 */
+	private NuclrResourceData listObjects(
+			String projectId, String bucket, String prefix, AtomicBoolean cancelled, EntrySink sink) {
+
+		var data = newObjectData(sink);
+
+		// Row 0 is always ".." (up one prefix level, or back to the bucket list at the root).
+		pagerRows.clear();
+		NuclrResource parent = GcpResource.objectParent(projectId, bucket, prefix);
+		pagerRows.add(parent);
+		add(data, sink, parent);
+
+		try {
+			pager = GcsObjectPager.open(bucket, prefix);
+			pagerKey = pagerKey(bucket, prefix);
+		} catch (GcsObjectPager.GcsListException e) {
+			log.warn("GCS object list failed for gs://{}/{}: {}", bucket, prefix, e.error());
+			GcpErrorDialog.show(e.error());
+			closePager();
+			return data; // just ".."
+		}
+
+		emitNextPage(projectId, bucket, prefix, data, cancelled, sink);
+		return data;
+	}
+
+	/**
+	 * Re-renders the current listing with one additional page appended. Falls back to a fresh
+	 * {@link #listObjects} if the live stream is gone (e.g. caches invalidated meanwhile).
+	 */
+	private NuclrResourceData loadMoreObjects(
+			String projectId, String bucket, String prefix, AtomicBoolean cancelled, EntrySink sink) {
+
+		if (pager == null || !pagerKey(bucket, prefix).equals(pagerKey)) {
+			closePager();
+			return listObjects(projectId, bucket, prefix, cancelled, sink);
+		}
+
+		var data = newObjectData(sink);
+		for (NuclrResource row : pagerRows) { // re-emit everything already loaded
+			add(data, sink, row);
+		}
+		emitNextPage(projectId, bucket, prefix, data, cancelled, sink);
+		return data;
+	}
+
+	/**
+	 * Reads the next page from the active pager, appending object/folder rows to the
+	 * accumulated listing, and a trailing "Load more…" entry while more remain. When the
+	 * listing is exhausted the held gcloud process is released.
+	 */
+	private void emitNextPage(
+			String projectId, String bucket, String prefix, NuclrResourceData data,
+			AtomicBoolean cancelled, EntrySink sink) {
+
+		List<GcsObject> page = pager.nextPage(OBJECT_PAGE_SIZE, cancelled);
+		for (GcsObject object : page) {
+			NuclrResource entry = object.folder()
+					? GcpResource.objectDir(projectId, bucket, prefix + object.name(), object.name())
+					: GcpResource.object(bucket, prefix + object.name(), object);
+			pagerRows.add(entry);
+			add(data, sink, entry);
+		}
+
+		if (pager.hasMore()) {
+			// Transient continuation row — recomputed on each render, not accumulated.
+			add(data, sink, GcpResource.loadMore(projectId, bucket, prefix));
+		} else {
+			closePager(); // listing complete; free the process (rows already rendered)
+		}
+		log.info("GCS object listing gs://{}/{}: +{} row(s), more={}",
+				bucket, prefix, page.size(), pager != null && pager.hasMore());
+	}
+
+	private NuclrResourceData newObjectData(EntrySink sink) {
+		var data = new NuclrResourceData();
+		data.setColumnNames(OBJECT_COLUMNS);
+		if (sink != null) {
+			sink.columns(OBJECT_COLUMNS);
+		}
+		return data;
+	}
+
+	/** Closes the live object stream (if any) and forgets the accumulated rows. */
+	private void closePager() {
+		if (pager != null) {
+			pager.close();
+			pager = null;
+		}
+		pagerKey = null;
+		pagerRows.clear();
+	}
+
+	private static String pagerKey(String bucket, String prefix) {
+		return bucket + ' ' + prefix;
+	}
+
+	/** Display label for an object "directory": the bucket name at the root, else the last segment. */
+	private static String locationName(String bucket, String prefix) {
+		if (prefix == null || prefix.isEmpty()) {
+			return bucket;
+		}
+		String trimmed = prefix.endsWith("/") ? prefix.substring(0, prefix.length() - 1) : prefix;
+		int slash = trimmed.lastIndexOf('/');
+		return (slash < 0 ? trimmed : trimmed.substring(slash + 1)) + "/";
 	}
 
 	/** Append an entry both to the synchronous result and the streaming sink (if present). */
@@ -456,6 +613,10 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 	@Override
 	public String getCurrentLocationDisplayText() {
+		if (GcpResource.isBucket(currentResource) || GcpResource.isObjectDir(currentResource)) {
+			return "GCP: " + GcpResource.projectId(currentResource) + " / GCS / gs://"
+					+ GcpResource.bucketName(currentResource) + "/" + GcpResource.objectPrefix(currentResource);
+		}
 		if (GcpResource.isService(currentResource)) {
 			return "GCP: " + GcpResource.projectId(currentResource) + " / " + currentResource.getName();
 		}

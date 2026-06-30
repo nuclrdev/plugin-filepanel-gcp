@@ -1,5 +1,10 @@
 package dev.nuclr.plugin.core.panel.gcp;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.OpenOption;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
@@ -35,6 +40,9 @@ public final class GcpResource extends NuclrResource {
 	static final String KIND_PROJECT = "project";
 	static final String KIND_SERVICE = "service";
 	static final String KIND_BUCKET = "bucket";
+	static final String KIND_OBJECT_DIR = "object-dir";
+	static final String KIND_OBJECT = "object";
+	static final String KIND_LOAD_MORE = "load-more";
 
 	/** Metadata carrying the owning project id (on project, service, and bucket resources). */
 	static final String PROJECT_ID = "nuclr.gcp.projectId";
@@ -44,6 +52,13 @@ public final class GcpResource extends NuclrResource {
 
 	static final String SERVICE_GCS = "gcs";
 	static final String SERVICE_PUBSUB = "pubsub";
+
+	/** Metadata: bucket name and object-key prefix on bucket / object-dir / load-more resources. */
+	static final String BUCKET = "nuclr.gcp.bucket";
+	static final String PREFIX = "nuclr.gcp.prefix";
+
+	/** Metadata: full object key (prefix + name) on object resources, for self-download. */
+	static final String OBJECT_KEY = "nuclr.gcp.objectKey";
 
 	/** Stable identifier of the single GCP root mount. */
 	static final String ROOT_UUID = "gcp://";
@@ -134,14 +149,17 @@ public final class GcpResource extends NuclrResource {
 		return service(projectId, SERVICE_PUBSUB, "Pub/Sub", "Topics and subscriptions");
 	}
 
-	/** A Cloud Storage bucket entry shown under a project's GCS service. */
-	static GcpResource bucket(GcsBucket bucket) {
+	/** A Cloud Storage bucket entry shown under a project's GCS service; navigable into its objects. */
+	static GcpResource bucket(String projectId, GcsBucket bucket) {
 		GcpResource r = new GcpResource();
 		String name = bucket.name();
 		r.setUuid(ROOT_UUID + "bucket/" + name);
 		r.setFullPath(ROOT_UUID + "bucket/" + name);
-		r.setFolder(false);
+		r.setFolder(true);
 		r.getMetadata().put(KIND, KIND_BUCKET);
+		r.getMetadata().put(PROJECT_ID, projectId);
+		r.getMetadata().put(BUCKET, name);
+		r.getMetadata().put(PREFIX, ""); // bucket root
 		r.rename(name);
 		r.getMetadata().put("Created", bucket.created());
 		r.getMetadata().put("Location type", bucket.locationType());
@@ -149,6 +167,106 @@ public final class GcpResource extends NuclrResource {
 		r.getMetadata().put("Default storage class", bucket.defaultStorageClass());
 		r.getMetadata().put("Last modified", bucket.lastModified());
 		r.getMetadata().put("Public Access", bucket.publicAccess());
+		return r;
+	}
+
+	/**
+	 * A navigable "directory" inside a bucket, identified by an object-key {@code prefix}
+	 * (ending in {@code /}). Used both for sub-folders and as the ".." / current-location
+	 * reference for an object listing.
+	 */
+	static GcpResource objectDir(String projectId, String bucket, String prefix, String displayName) {
+		GcpResource r = new GcpResource();
+		r.setUuid(ROOT_UUID + "bucket/" + bucket + "/" + prefix);
+		r.setFullPath(ROOT_UUID + "bucket/" + bucket + "/" + prefix);
+		r.setFolder(true);
+		r.getMetadata().put(KIND, KIND_OBJECT_DIR);
+		r.getMetadata().put(PROJECT_ID, projectId);
+		r.getMetadata().put(BUCKET, bucket);
+		r.getMetadata().put(PREFIX, prefix);
+		r.rename(displayName);
+		r.getMetadata().put("Size", "-");
+		r.getMetadata().put("Storage class", "-");
+		r.getMetadata().put("Updated", "-");
+		return r;
+	}
+
+	/** A leaf object entry within a bucket listing. {@code key} is the full object key (prefix + name). */
+	static GcpResource object(String bucket, String key, GcsObject object) {
+		GcpResource r = new GcpResource();
+		r.setUuid(ROOT_UUID + "object/" + bucket + "/" + key);
+		r.setFullPath("gs://" + bucket + "/" + key);
+		r.setFolder(false);
+		r.getMetadata().put(KIND, KIND_OBJECT);
+		r.getMetadata().put(BUCKET, bucket);
+		r.getMetadata().put(OBJECT_KEY, key);
+		r.rename(object.name());
+		r.getMetadata().put("Size", object.size());
+		r.getMetadata().put("Storage class", object.storageClass());
+		r.getMetadata().put("Updated", object.updated());
+		return r;
+	}
+
+	/**
+	 * Streams this object's content. For an object resource (path-less by default), the object
+	 * is downloaded to a local temp file on first access; the temp file is then adopted as this
+	 * resource's {@link #getPath() path} and scheduled for deletion via {@link GcsTempFiles}.
+	 * The host's built-in quick-view providers select by {@link #getName() name} and read through
+	 * this stream, so no GCS-specific viewer is needed.
+	 */
+	@Override
+	public InputStream openInputStream(OpenOption... options) throws Exception {
+		if (!KIND_OBJECT.equals(getMetadata().get(KIND))) {
+			return super.openInputStream(options);
+		}
+		return Files.newInputStream(materialize(), options);
+	}
+
+	/** Download-once: returns the local temp file backing this object, fetching it if needed. */
+	private synchronized Path materialize() throws IOException {
+		Path existing = getPath();
+		if (existing != null && Files.exists(existing)) {
+			return existing;
+		}
+		String bucket = bucketName(this);
+		String key = objectKey(this);
+		if (bucket == null || key == null) {
+			throw new IOException("Not a downloadable GCS object: " + getName());
+		}
+
+		Path temp = Files.createTempFile("nuclr-gcs-", "-" + sanitize(getName()));
+		GcsObjectDownloader.Result result = new GcsObjectDownloader().downloadToFile(bucket, key, temp);
+		if (result instanceof GcsObjectDownloader.Result.Err err) {
+			Files.deleteIfExists(temp);
+			throw new IOException("Failed to download gs://" + bucket + "/" + key + ": " + err.error());
+		}
+		setPath(temp);
+		GcsTempFiles.register(temp);
+		return temp;
+	}
+
+	/** Make an object name safe to use as a temp-file suffix while preserving its extension. */
+	private static String sanitize(String name) {
+		if (name == null || name.isBlank()) {
+			return "object";
+		}
+		return name.replaceAll("[^A-Za-z0-9._-]", "_");
+	}
+
+	/** The synthetic "▼ Load more…" entry that fetches the next page of the same listing. */
+	static GcpResource loadMore(String projectId, String bucket, String prefix) {
+		GcpResource r = new GcpResource();
+		r.setUuid(ROOT_UUID + "bucket/" + bucket + "/" + prefix + " load-more");
+		r.setFullPath(r.getUuid());
+		r.setFolder(true);
+		r.getMetadata().put(KIND, KIND_LOAD_MORE);
+		r.getMetadata().put(PROJECT_ID, projectId);
+		r.getMetadata().put(BUCKET, bucket);
+		r.getMetadata().put(PREFIX, prefix);
+		r.rename("▼ Load more…");
+		r.getMetadata().put("Size", "-");
+		r.getMetadata().put("Storage class", "-");
+		r.getMetadata().put("Updated", "-");
 		return r;
 	}
 
@@ -180,21 +298,75 @@ public final class GcpResource extends NuclrResource {
 		return resource != null && KIND_SERVICE.equals(resource.getMetadata().get(KIND));
 	}
 
+	static boolean isBucket(NuclrResource resource) {
+		return resource != null && KIND_BUCKET.equals(resource.getMetadata().get(KIND));
+	}
+
+	static boolean isObjectDir(NuclrResource resource) {
+		return resource != null && KIND_OBJECT_DIR.equals(resource.getMetadata().get(KIND));
+	}
+
+	static boolean isLoadMore(NuclrResource resource) {
+		return resource != null && KIND_LOAD_MORE.equals(resource.getMetadata().get(KIND));
+	}
+
+	static boolean isObject(NuclrResource resource) {
+		return resource != null && KIND_OBJECT.equals(resource.getMetadata().get(KIND));
+	}
+
+	/** The full object key (prefix + name) carried by an object resource, or {@code null}. */
+	static String objectKey(NuclrResource resource) {
+		return metaString(resource, OBJECT_KEY);
+	}
+
+	/** The bucket name carried by a bucket / object-dir / load-more resource, or {@code null}. */
+	static String bucketName(NuclrResource resource) {
+		return metaString(resource, BUCKET);
+	}
+
+	/** The object-key prefix carried by a bucket / object-dir / load-more resource, or {@code ""}. */
+	static String objectPrefix(NuclrResource resource) {
+		String prefix = metaString(resource, PREFIX);
+		return prefix == null ? "" : prefix;
+	}
+
+	/**
+	 * The ".." target for an object listing: the parent prefix's directory, or the GCS
+	 * bucket list (the service node) when already at the bucket root.
+	 */
+	static GcpResource objectParent(String projectId, String bucket, String prefix) {
+		if (prefix == null || prefix.isEmpty()) {
+			GcpResource r = gcsService(projectId); // ".." → back to the bucket list
+			r.rename("..");
+			return r;
+		}
+		String parent = parentPrefix(prefix);
+		GcpResource r = objectDir(projectId, bucket, parent, "..");
+		return r;
+	}
+
+	/** {@code "a/b/c/"} → {@code "a/b/"}; {@code "a/"} → {@code ""}. */
+	static String parentPrefix(String prefix) {
+		String trimmed = prefix.endsWith("/") ? prefix.substring(0, prefix.length() - 1) : prefix;
+		int slash = trimmed.lastIndexOf('/');
+		return slash < 0 ? "" : trimmed.substring(0, slash + 1);
+	}
+
 	/** The owning project id of a project, service, or bucket resource, or {@code null}. */
 	static String projectId(NuclrResource resource) {
-		if (resource == null) {
-			return null;
-		}
-		Object value = resource.getMetadata().get(PROJECT_ID);
-		return value == null ? null : value.toString();
+		return metaString(resource, PROJECT_ID);
 	}
 
 	/** The service type ({@link #SERVICE_GCS} / {@link #SERVICE_PUBSUB}) of a service resource, or {@code null}. */
 	static String serviceType(NuclrResource resource) {
+		return metaString(resource, SERVICE);
+	}
+
+	private static String metaString(NuclrResource resource, String key) {
 		if (resource == null) {
 			return null;
 		}
-		Object value = resource.getMetadata().get(SERVICE);
+		Object value = resource.getMetadata().get(key);
 		return value == null ? null : value.toString();
 	}
 }

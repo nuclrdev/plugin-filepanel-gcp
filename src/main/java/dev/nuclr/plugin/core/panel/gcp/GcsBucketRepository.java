@@ -2,7 +2,6 @@ package dev.nuclr.plugin.core.panel.gcp;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Orchestrates {@link GcloudCli} and {@link GcsBucketParser} to list the Cloud Storage
@@ -43,12 +42,7 @@ public class GcsBucketRepository {
         }
 
         if (cliResult.exitCode() != 0) {
-            String stderr = cliResult.stderr().strip();
-            if (isAuthError(stderr)) {
-                return new Result.Err(new GcpError.NotAuthenticated());
-            }
-            String truncated = stderr.length() > 500 ? stderr.substring(0, 500) : stderr;
-            return new Result.Err(new GcpError.CommandFailed(truncated));
+            return new Result.Err(GcloudErrors.classify(cliResult.stderr()));
         }
 
         try {
@@ -57,19 +51,5 @@ public class GcsBucketRepository {
             return new Result.Err(
                     new GcpError.CommandFailed("Failed to parse gcloud output: " + e.getMessage()));
         }
-    }
-
-    /**
-     * Heuristically detects authentication errors from gcloud's stderr.
-     * Covers unauthenticated, expired tokens, and missing active account.
-     */
-    private static boolean isAuthError(String stderr) {
-        String lower = stderr.toLowerCase(Locale.ROOT);
-        return lower.contains("auth login")
-                || lower.contains("not currently have an active account")
-                || lower.contains("invalid_grant")
-                || lower.contains("token has been expired")
-                || lower.contains("do not have permission")
-                || (lower.contains("please run") && lower.contains("gcloud auth"));
     }
 }
