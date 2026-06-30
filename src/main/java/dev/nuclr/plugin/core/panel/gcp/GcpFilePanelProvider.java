@@ -2,11 +2,15 @@ package dev.nuclr.plugin.core.panel.gcp;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import dev.nuclr.platform.plugin.BaseNuclrPlugin;
 import dev.nuclr.platform.plugin.FilePanelNuclrPlugin;
+import dev.nuclr.platform.plugin.NuclrPluginCallback;
 import dev.nuclr.platform.plugin.NuclrPluginContext;
 import dev.nuclr.platform.plugin.NuclrResource;
 import lombok.extern.slf4j.Slf4j;
@@ -51,8 +55,11 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			"Name", "Created", "Location type", "Location",
 			"Default storage class", "Last modified", "Public Access");
 
-	/** How long a successful project list stays valid before {@code gcloud} is re-run. */
+	/** How long a successful project/bucket list stays valid before {@code gcloud} is re-run. */
 	private static final long CACHE_TTL_MS = 5 * 60_000L;
+
+	/** {@code act} action that forces every cached listing to be re-fetched on next navigation. */
+	private static final String ACTION_REFRESH_PANEL = "refresh.panel";
 
 	private final String uuid = UUID.randomUUID().toString();
 	private final GcpProjectRepository repository = new GcpProjectRepository();
@@ -62,10 +69,15 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	private boolean focused;
 	private NuclrResource currentResource;
 
-	// Short-lived cache so re-entering the root (e.g. ".." back from a project) does not
-	// re-run gcloud on every navigation. Written from the background read thread.
+	// Short-lived caches so re-entering a listing (e.g. ".." back from a project, or
+	// switching between GCS and Pub/Sub) does not re-run gcloud on every navigation.
+	// Written from the background read thread; cleared on the "refresh.panel" action.
 	private volatile List<GcpProject> cachedProjects;
 	private volatile long cachedAtMs;
+
+	/** Per-project bucket cache, keyed by project id. */
+	private record CachedBuckets(List<GcsBucket> buckets, long atMs) {}
+	private final Map<String, CachedBuckets> bucketCache = new ConcurrentHashMap<>();
 
 	// -------------------------------------------------------------------------
 	// Plugin metadata
@@ -164,6 +176,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	public void unload() {
 		context = null;
 		cachedProjects = null;
+		bucketCache.clear();
 		log.info("GCP file panel plugin unloaded");
 	}
 
@@ -323,22 +336,19 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 		add(data, sink, GcpResource.parentToProject(projectId)); // ".." back to the service list
 
-		GcsBucketRepository.Result result = bucketRepository.listBuckets(projectId);
-		switch (result) {
-			case GcsBucketRepository.Result.Ok ok -> {
-				for (GcsBucket bucket : ok.buckets()) {
-					if (cancelled != null && cancelled.get()) {
-						break;
-					}
-					add(data, sink, GcpResource.bucket(bucket));
-				}
-				log.info("GCS bucket listing for {}: {} bucket(s)", projectId, ok.buckets().size());
-			}
-			case GcsBucketRepository.Result.Err err -> {
-				log.warn("GCS bucket list failed for {}: {}", projectId, err.error());
-				GcpErrorDialog.show(err.error());
-			}
+		List<GcsBucket> buckets = buckets(projectId);
+		if (buckets == null) {
+			// Hard error already surfaced via GcpErrorDialog; show just the "..".
+			return data;
 		}
+
+		for (GcsBucket bucket : buckets) {
+			if (cancelled != null && cancelled.get()) {
+				break;
+			}
+			add(data, sink, GcpResource.bucket(bucket));
+		}
+		log.info("GCS bucket listing for {}: {} bucket(s)", projectId, buckets.size());
 		return data;
 	}
 
@@ -394,6 +404,50 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		cachedProjects = projects;
 		cachedAtMs = System.currentTimeMillis();
 		return projects;
+	}
+
+	/**
+	 * Return a project's Cloud Storage buckets, using a short-lived per-project cache to
+	 * avoid re-running gcloud on every navigation. Returns {@code null} on a hard error
+	 * (already surfaced via {@link GcpErrorDialog}); "no buckets" is an empty list.
+	 */
+	private List<GcsBucket> buckets(String projectId) {
+
+		CachedBuckets cached = bucketCache.get(projectId);
+		if (cached != null && System.currentTimeMillis() - cached.atMs() < CACHE_TTL_MS) {
+			return cached.buckets();
+		}
+
+		GcsBucketRepository.Result result = bucketRepository.listBuckets(projectId);
+		return switch (result) {
+			case GcsBucketRepository.Result.Ok ok -> {
+				bucketCache.put(projectId, new CachedBuckets(ok.buckets(), System.currentTimeMillis()));
+				yield ok.buckets();
+			}
+			case GcsBucketRepository.Result.Err err -> {
+				log.warn("GCS bucket list failed for {}: {}", projectId, err.error());
+				GcpErrorDialog.show(err.error());
+				yield null;
+			}
+		};
+	}
+
+	// -------------------------------------------------------------------------
+	// Actions
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Handles panel actions. On {@value #ACTION_REFRESH_PANEL} the cached project and bucket
+	 * listings are dropped so the next navigation re-queries gcloud; other actions are ignored.
+	 */
+	@Override
+	public void act(BaseNuclrPlugin other, String actionType, List<NuclrResource> selectedResources,
+			NuclrResource focusedResource, Map<String, Object> data, NuclrPluginCallback callback) {
+		if (ACTION_REFRESH_PANEL.equals(actionType)) {
+			cachedProjects = null;
+			bucketCache.clear();
+			log.info("GCP panel caches invalidated on '{}'", actionType);
+		}
 	}
 
 	// -------------------------------------------------------------------------
