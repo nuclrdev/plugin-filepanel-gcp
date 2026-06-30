@@ -1,0 +1,16 @@
+{
+	"schemaVersion": 1,
+	"name": "Google Cloud Platform Panel",
+	"id": "dev.nuclr.plugin.core.panel.gcp",
+	"version": "1.0.0",
+	"description": "GCP file panel plugin using the gcloud CLI. Adds a \"GCP\" drive entry that lists the projects accessible to the current gcloud account.",
+	"author": "Nuclr Development Team",
+	"license": "Apache-2.0",
+	"website": "https://nuclr.dev",
+	"pageUrl": "https://nuclr.dev/plugins/core/filepanel-gcp.html",
+	"docUrl": "https://nuclr.dev/plugins/core/filepanel-gcp.html",
+	"type": "Official",
+	"panelProviders": [
+		"dev.nuclr.plugin.core.panel.gcp.GcpFilePanelProvider"
+	]
+}
