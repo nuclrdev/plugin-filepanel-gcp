@@ -28,11 +28,22 @@ public final class GcpResource extends NuclrResource {
 	/** Metadata flag marking a resource as belonging to the GCP panel. */
 	static final String MARKER = "nuclr.gcp.panel";
 
-	/** Metadata key distinguishing the root mount ({@link #KIND_ROOT}) from a project. */
+	/** Metadata key distinguishing the kind of resource (root / project / service / bucket). */
 	static final String KIND = "nuclr.gcp.kind";
 
 	static final String KIND_ROOT = "root";
 	static final String KIND_PROJECT = "project";
+	static final String KIND_SERVICE = "service";
+	static final String KIND_BUCKET = "bucket";
+
+	/** Metadata carrying the owning project id (on project, service, and bucket resources). */
+	static final String PROJECT_ID = "nuclr.gcp.projectId";
+
+	/** Metadata key identifying which service a {@link #KIND_SERVICE} resource represents. */
+	static final String SERVICE = "nuclr.gcp.service";
+
+	static final String SERVICE_GCS = "gcs";
+	static final String SERVICE_PUBSUB = "pubsub";
 
 	/** Stable identifier of the single GCP root mount. */
 	static final String ROOT_UUID = "gcp://";
@@ -69,16 +80,75 @@ public final class GcpResource extends NuclrResource {
 
 	/** A project entry shown under the root. */
 	static GcpResource project(GcpProject project) {
-		GcpResource r = new GcpResource();
-		String id = project.projectId();
-		r.setUuid(ROOT_UUID + "project/" + id);
-		r.setFullPath(ROOT_UUID + "project/" + id);
-		r.setFolder(true);
-		r.getMetadata().put(KIND, KIND_PROJECT);
-		r.rename(id);
+		GcpResource r = projectRef(project.projectId());
 		r.getMetadata().put("Project Name", blankToDash(project.name()));
 		r.getMetadata().put("Number", project.projectNumber() > 0 ? String.valueOf(project.projectNumber()) : "-");
 		r.getMetadata().put("State", blankToDash(project.lifecycleState()));
+		return r;
+	}
+
+	/**
+	 * A bare project resource identified only by its id — used as the current location and
+	 * as the ".." target when navigating back to a project's service list (the rich columns
+	 * from {@link #project(GcpProject)} are only needed in the root listing).
+	 */
+	static GcpResource projectRef(String projectId) {
+		GcpResource r = new GcpResource();
+		r.setUuid(ROOT_UUID + "project/" + projectId);
+		r.setFullPath(ROOT_UUID + "project/" + projectId);
+		r.setFolder(true);
+		r.getMetadata().put(KIND, KIND_PROJECT);
+		r.getMetadata().put(PROJECT_ID, projectId);
+		r.rename(projectId);
+		return r;
+	}
+
+	/** The synthetic ".." entry that navigates from a service list back to its project's services. */
+	static GcpResource parentToProject(String projectId) {
+		GcpResource r = projectRef(projectId);
+		r.rename("..");
+		return r;
+	}
+
+	/** A service node (e.g. GCS, Pub/Sub) shown under a project. */
+	private static GcpResource service(String projectId, String serviceType, String displayName, String description) {
+		GcpResource r = new GcpResource();
+		r.setUuid(ROOT_UUID + "project/" + projectId + "/" + serviceType);
+		r.setFullPath(ROOT_UUID + "project/" + projectId + "/" + serviceType);
+		r.setFolder(true);
+		r.getMetadata().put(KIND, KIND_SERVICE);
+		r.getMetadata().put(PROJECT_ID, projectId);
+		r.getMetadata().put(SERVICE, serviceType);
+		r.rename(displayName);
+		r.getMetadata().put("Description", description);
+		return r;
+	}
+
+	/** The Cloud Storage service entry under a project. */
+	static GcpResource gcsService(String projectId) {
+		return service(projectId, SERVICE_GCS, "GCS", "Cloud Storage buckets");
+	}
+
+	/** The Pub/Sub service entry under a project. */
+	static GcpResource pubsubService(String projectId) {
+		return service(projectId, SERVICE_PUBSUB, "Pub/Sub", "Topics and subscriptions");
+	}
+
+	/** A Cloud Storage bucket entry shown under a project's GCS service. */
+	static GcpResource bucket(GcsBucket bucket) {
+		GcpResource r = new GcpResource();
+		String name = bucket.name();
+		r.setUuid(ROOT_UUID + "bucket/" + name);
+		r.setFullPath(ROOT_UUID + "bucket/" + name);
+		r.setFolder(false);
+		r.getMetadata().put(KIND, KIND_BUCKET);
+		r.rename(name);
+		r.getMetadata().put("Created", bucket.created());
+		r.getMetadata().put("Location type", bucket.locationType());
+		r.getMetadata().put("Location", bucket.location());
+		r.getMetadata().put("Default storage class", bucket.defaultStorageClass());
+		r.getMetadata().put("Last modified", bucket.lastModified());
+		r.getMetadata().put("Public Access", bucket.publicAccess());
 		return r;
 	}
 
@@ -104,5 +174,27 @@ public final class GcpResource extends NuclrResource {
 
 	static boolean isProject(NuclrResource resource) {
 		return resource != null && KIND_PROJECT.equals(resource.getMetadata().get(KIND));
+	}
+
+	static boolean isService(NuclrResource resource) {
+		return resource != null && KIND_SERVICE.equals(resource.getMetadata().get(KIND));
+	}
+
+	/** The owning project id of a project, service, or bucket resource, or {@code null}. */
+	static String projectId(NuclrResource resource) {
+		if (resource == null) {
+			return null;
+		}
+		Object value = resource.getMetadata().get(PROJECT_ID);
+		return value == null ? null : value.toString();
+	}
+
+	/** The service type ({@link #SERVICE_GCS} / {@link #SERVICE_PUBSUB}) of a service resource, or {@code null}. */
+	static String serviceType(NuclrResource resource) {
+		if (resource == null) {
+			return null;
+		}
+		Object value = resource.getMetadata().get(SERVICE);
+		return value == null ? null : value.toString();
 	}
 }

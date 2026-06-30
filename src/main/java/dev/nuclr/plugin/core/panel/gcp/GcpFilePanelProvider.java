@@ -17,8 +17,9 @@ import lombok.extern.slf4j.Slf4j;
  * <p>Contributes a single <b>GCP</b> entry to the Alt+F1/Alt+F2 drive selector. Opening
  * it lists the GCP projects the current user can access, queried live via the
  * {@code gcloud} CLI ({@code gcloud projects list}). Each project is shown as a navigable
- * folder; entering one shows a {@code ..} back to the project list (per-project contents
- * are out of scope for now).
+ * folder; entering one lists its GCP services (GCS, Pub/Sub). Entering GCS lists the
+ * project's Cloud Storage buckets ({@code gcloud storage buckets list}); other services
+ * are not browsable yet.
  *
  * <p>The panel is built from purely virtual {@link GcpResource}s (no local path), so the
  * local filesystem plugin never claims them and the host routes navigation here via
@@ -40,13 +41,22 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	private static final String PluginPageUrl = "https://nuclr.dev/plugins/core/filepanel-gcp.html";
 
 	/** Columns shown for the project listing (cells read from each resource's metadata). */
-	private static final List<String> COLUMNS = List.of("Name", "Project Name", "Number", "State");
+	private static final List<String> PROJECT_COLUMNS = List.of("Name", "Project Name", "Number", "State");
+
+	/** Columns shown for the service listing under a project (GCS, Pub/Sub). */
+	private static final List<String> SERVICE_COLUMNS = List.of("Name", "Description");
+
+	/** Columns shown for the Cloud Storage bucket listing under a project's GCS service. */
+	private static final List<String> BUCKET_COLUMNS = List.of(
+			"Name", "Created", "Location type", "Location",
+			"Default storage class", "Last modified", "Public Access");
 
 	/** How long a successful project list stays valid before {@code gcloud} is re-run. */
 	private static final long CACHE_TTL_MS = 5 * 60_000L;
 
 	private final String uuid = UUID.randomUUID().toString();
 	private final GcpProjectRepository repository = new GcpProjectRepository();
+	private final GcsBucketRepository bucketRepository = new GcsBucketRepository();
 
 	private NuclrPluginContext context;
 	private boolean focused;
@@ -236,19 +246,34 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			return listProjects(cancelled, sink);
 		}
 
-		// A project: per-project contents are not browsable yet, so show only the
-		// ".." that returns to the project list.
-		this.currentResource = resourceToOpen;
-		return projectContents(sink);
+		if (GcpResource.isProject(resourceToOpen)) {
+			// Rebuild a clean project ref (the incoming resource may be the ".." entry) so
+			// the location bar shows the project id rather than "..".
+			String projectId = GcpResource.projectId(resourceToOpen);
+			this.currentResource = GcpResource.projectRef(projectId);
+			return listServices(projectId, sink);
+		}
+
+		if (GcpResource.isService(resourceToOpen)) {
+			this.currentResource = resourceToOpen;
+			String projectId = GcpResource.projectId(resourceToOpen);
+			if (GcpResource.SERVICE_GCS.equals(GcpResource.serviceType(resourceToOpen))) {
+				return listBuckets(projectId, cancelled, sink);
+			}
+			// Other services (e.g. Pub/Sub) are not browsable yet; show only the "..".
+			return serviceStub(projectId, sink);
+		}
+
+		return null;
 	}
 
 	/** Build the project listing for the GCP root, streaming entries into {@code sink}. */
 	private NuclrResourceData listProjects(AtomicBoolean cancelled, EntrySink sink) {
 
 		var data = new NuclrResourceData();
-		data.setColumnNames(COLUMNS);
+		data.setColumnNames(PROJECT_COLUMNS);
 		if (sink != null) {
-			sink.columns(COLUMNS);
+			sink.columns(PROJECT_COLUMNS);
 		}
 
 		List<GcpProject> projects = projects();
@@ -272,21 +297,70 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		return data;
 	}
 
-	/** A project shows only the synthetic ".." back to the project list. */
-	private NuclrResourceData projectContents(EntrySink sink) {
+	/** A project lists the GCP services it exposes ({@code ..}, GCS, Pub/Sub). */
+	private NuclrResourceData listServices(String projectId, EntrySink sink) {
 
 		var data = new NuclrResourceData();
-		data.setColumnNames(COLUMNS);
+		data.setColumnNames(SERVICE_COLUMNS);
 		if (sink != null) {
-			sink.columns(COLUMNS);
+			sink.columns(SERVICE_COLUMNS);
 		}
 
-		var parent = GcpResource.parent();
-		data.getEntries().add(parent);
+		add(data, sink, GcpResource.parent()); // ".." back to the project list
+		add(data, sink, GcpResource.gcsService(projectId));
+		add(data, sink, GcpResource.pubsubService(projectId));
+		return data;
+	}
+
+	/** The GCS service lists the project's Cloud Storage buckets, streaming into {@code sink}. */
+	private NuclrResourceData listBuckets(String projectId, AtomicBoolean cancelled, EntrySink sink) {
+
+		var data = new NuclrResourceData();
+		data.setColumnNames(BUCKET_COLUMNS);
 		if (sink != null) {
-			sink.add(parent);
+			sink.columns(BUCKET_COLUMNS);
+		}
+
+		add(data, sink, GcpResource.parentToProject(projectId)); // ".." back to the service list
+
+		GcsBucketRepository.Result result = bucketRepository.listBuckets(projectId);
+		switch (result) {
+			case GcsBucketRepository.Result.Ok ok -> {
+				for (GcsBucket bucket : ok.buckets()) {
+					if (cancelled != null && cancelled.get()) {
+						break;
+					}
+					add(data, sink, GcpResource.bucket(bucket));
+				}
+				log.info("GCS bucket listing for {}: {} bucket(s)", projectId, ok.buckets().size());
+			}
+			case GcsBucketRepository.Result.Err err -> {
+				log.warn("GCS bucket list failed for {}: {}", projectId, err.error());
+				GcpErrorDialog.show(err.error());
+			}
 		}
 		return data;
+	}
+
+	/** A not-yet-browsable service shows only the synthetic ".." back to the service list. */
+	private NuclrResourceData serviceStub(String projectId, EntrySink sink) {
+
+		var data = new NuclrResourceData();
+		data.setColumnNames(SERVICE_COLUMNS);
+		if (sink != null) {
+			sink.columns(SERVICE_COLUMNS);
+		}
+
+		add(data, sink, GcpResource.parentToProject(projectId));
+		return data;
+	}
+
+	/** Append an entry both to the synchronous result and the streaming sink (if present). */
+	private static void add(NuclrResourceData data, EntrySink sink, NuclrResource entry) {
+		data.getEntries().add(entry);
+		if (sink != null) {
+			sink.add(entry);
+		}
 	}
 
 	/**
@@ -328,6 +402,9 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 	@Override
 	public String getCurrentLocationDisplayText() {
+		if (GcpResource.isService(currentResource)) {
+			return "GCP: " + GcpResource.projectId(currentResource) + " / " + currentResource.getName();
+		}
 		if (GcpResource.isProject(currentResource)) {
 			return "GCP: " + currentResource.getName();
 		}
@@ -347,6 +424,6 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		if (selectedResources.size() == 1) {
 			return selectedResources.get(0).getName();
 		}
-		return selectedResources.size() + " projects selected";
+		return selectedResources.size() + " items selected";
 	}
 }
