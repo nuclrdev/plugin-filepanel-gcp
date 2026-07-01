@@ -67,7 +67,7 @@ final class GcsCopyService {
         }
 
         var failures = new ArrayList<String>();
-        GcsCopyProgressDialog.run(callback ->
+        GcsProgressDialog.run("Copy", callback ->
                 run(objects, destination, options.existing(), callback, failures, context, sourceUuid));
 
         refreshDestination(other, context);
@@ -87,7 +87,7 @@ final class GcsCopyService {
                 break;
             }
             NuclrResource object = objects.get(i);
-            cb.onStart(object.getName() + " (" + (i + 1) + "/" + objects.size() + ")");
+            cb.onStart("Copying " + object.getName() + " (" + (i + 1) + "/" + objects.size() + ")");
 
             Path target = destination.resolve(object.getName());
             boolean append = false;

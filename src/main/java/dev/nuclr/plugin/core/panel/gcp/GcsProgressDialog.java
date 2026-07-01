@@ -20,27 +20,27 @@ import dev.nuclr.platform.plugin.NuclrPluginCallback;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Modal copy progress dialog with a Cancel button, mirroring the local file-system plugin's dialog
- * (the two plugins load in isolated classloaders, so the UI is intentionally duplicated). The
- * supplied {@code work} runs on a background virtual thread and receives a {@link NuclrPluginCallback}
- * wired to this dialog; the modal dialog keeps the EDT pumping (so the "File already exists" prompt
- * shown from {@code work} stays responsive) and blocks the caller until the copy finishes or the
- * user cancels.
+ * Modal progress dialog with a Cancel button for the GCP panel's long-running operations (copy,
+ * delete). Mirrors the local file-system plugin's dialog (the two live in isolated classloaders, so
+ * the UI is intentionally duplicated). The supplied {@code work} runs on a background virtual thread
+ * and receives a {@link NuclrPluginCallback} wired to this dialog; the modal dialog keeps the EDT
+ * pumping (so prompts shown from {@code work} stay responsive) and blocks the caller until the work
+ * finishes or the user cancels.
  *
  * <p>{@link #run} marshals itself onto the EDT, so it may be called from any thread.
  */
 @Slf4j
-final class GcsCopyProgressDialog {
+final class GcsProgressDialog {
 
-    private GcsCopyProgressDialog() {
+    private GcsProgressDialog() {
     }
 
-    /** Run {@code work} under a progress dialog, blocking until it completes or is cancelled. */
-    static void run(Consumer<NuclrPluginCallback> work) {
-        runOnEdtAndWait(() -> show(work));
+    /** Run {@code work} under a progress dialog titled {@code title}, blocking until it completes. */
+    static void run(String title, Consumer<NuclrPluginCallback> work) {
+        runOnEdtAndWait(() -> show(title, work));
     }
 
-    private static void show(Consumer<NuclrPluginCallback> work) {
+    private static void show(String title, Consumer<NuclrPluginCallback> work) {
 
         Window owner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow();
 
@@ -49,7 +49,7 @@ final class GcsCopyProgressDialog {
         bar.setStringPainted(true);
         JButton cancelButton = new JButton("Cancel");
 
-        JDialog dialog = new JDialog(owner, "Copy", JDialog.ModalityType.APPLICATION_MODAL);
+        JDialog dialog = new JDialog(owner, title, JDialog.ModalityType.APPLICATION_MODAL);
         dialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
 
         JPanel north = new JPanel(new BorderLayout(0, 6));
@@ -81,7 +81,7 @@ final class GcsCopyProgressDialog {
         NuclrPluginCallback callback = new NuclrPluginCallback() {
             @Override
             public void onStart(String description) {
-                SwingUtilities.invokeLater(() -> itemLabel.setText("Copying " + (description == null ? "" : description)));
+                SwingUtilities.invokeLater(() -> itemLabel.setText((description == null ? "" : description)));
             }
 
             @Override
@@ -102,7 +102,7 @@ final class GcsCopyProgressDialog {
 
             @Override
             public void onError(String description, Exception e) {
-                log.warn("Copy error for [{}]: {}", description, e == null ? "?" : e.getMessage());
+                log.warn("{} error for [{}]: {}", title, description, e == null ? "?" : e.getMessage());
             }
 
             @Override
@@ -111,11 +111,11 @@ final class GcsCopyProgressDialog {
             }
         };
 
-        Thread.ofVirtual().name("gcs-copy").start(() -> {
+        Thread.ofVirtual().name("gcs-" + title.toLowerCase()).start(() -> {
             try {
                 work.accept(callback);
             } catch (Throwable t) {
-                log.error("Copy work failed: {}", t.getMessage(), t);
+                log.error("{} work failed: {}", title, t.getMessage(), t);
             } finally {
                 SwingUtilities.invokeLater(() -> {
                     finished.set(true);
@@ -141,7 +141,7 @@ final class GcsCopyProgressDialog {
         try {
             SwingUtilities.invokeAndWait(runnable);
         } catch (Exception e) {
-            log.warn("Failed to run copy progress dialog on EDT: {}", e.getMessage(), e);
+            log.warn("Failed to run progress dialog on EDT: {}", e.getMessage(), e);
         }
     }
 }

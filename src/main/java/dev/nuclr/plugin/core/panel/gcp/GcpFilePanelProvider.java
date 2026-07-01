@@ -85,6 +85,12 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	 */
 	private static final String ACTION_COPY = "filepanel.copy";
 
+	/**
+	 * {@code act} action dispatched by the host for the F8 "Delete" function key. The selected (or
+	 * focused) GCS objects are removed from their bucket after confirmation (see {@link GcsDeleteService}).
+	 */
+	private static final String ACTION_DELETE = "filepanel.delete";
+
 	private final String uuid = UUID.randomUUID().toString();
 	private final GcpProjectRepository repository = new GcpProjectRepository();
 	private final GcsBucketRepository bucketRepository = new GcsBucketRepository();
@@ -264,12 +270,15 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	}
 
 	/**
-	 * Bottom-bar function keys for the GCP panel. Only F5 "Copy" is offered: it copies the
-	 * selected Cloud Storage object(s) into the other panel's folder (see {@link GcsCopyService}).
+	 * Bottom-bar function keys for the GCP panel: F5 "Copy" (copies the selected Cloud Storage
+	 * object(s) into the other panel's folder, see {@link GcsCopyService}) and F8 "Delete" (removes
+	 * the selected object(s) from their bucket, see {@link GcsDeleteService}).
 	 */
 	@Override
 	public List<NuclrMenuResource> menuItems(NuclrResource resource) {
-		return List.of(new NuclrMenuResource("Copy", "F5", ACTION_COPY));
+		return List.of(
+				new NuclrMenuResource("Copy", "F5", ACTION_COPY),
+				new NuclrMenuResource("Delete", "F8", ACTION_DELETE));
 	}
 
 	@Override
@@ -700,6 +709,22 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 		if (ACTION_COPY.equals(actionType)) {
 			new GcsCopyService().copy(other, selectedResources, focusedResource, context, uuid);
+			return;
+		}
+
+		if (ACTION_DELETE.equals(actionType)) {
+			int deleted = new GcsDeleteService().delete(selectedResources, focusedResource);
+			if (deleted > 0) {
+				// The deleted objects belong to the currently open listing; drop its cached copy
+				// and reload this panel so the removed rows disappear (their marks drop with them).
+				if (GcpResource.isBucket(currentResource) || GcpResource.isObjectDir(currentResource)) {
+					GcpDiskCache.clearObjects(
+							GcpResource.bucketName(currentResource), GcpResource.objectPrefix(currentResource));
+				}
+				if (context != null && context.getEventBus() != null) {
+					context.getEventBus().emit("refresh.plugin.file.panel", Map.of("plugin.uuid", uuid), null);
+				}
+			}
 			return;
 		}
 
