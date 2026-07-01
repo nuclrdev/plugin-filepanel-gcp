@@ -4,12 +4,17 @@ import java.awt.Desktop;
 import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import javax.swing.JOptionPane;
+import javax.swing.SwingUtilities;
 
 import dev.nuclr.platform.plugin.BaseNuclrPlugin;
 import dev.nuclr.platform.plugin.FilePanelNuclrPlugin;
@@ -90,6 +95,13 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	 * focused) GCS objects are removed from their bucket after confirmation (see {@link GcsDeleteService}).
 	 */
 	private static final String ACTION_DELETE = "filepanel.delete";
+
+	/**
+	 * {@code act} action dispatched by the host for the F7 "Make Folder" function key. Prompts for a
+	 * name and creates a Cloud Storage "folder" in the current bucket listing (see
+	 * {@link GcsMakeFolderService}). Only meaningful inside a bucket.
+	 */
+	private static final String ACTION_MAKE_FOLDER = "filepanel.makeFolder";
 
 	private final String uuid = UUID.randomUUID().toString();
 	private final GcpProjectRepository repository = new GcpProjectRepository();
@@ -271,13 +283,15 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 	/**
 	 * Bottom-bar function keys for the GCP panel: F5 "Copy" (copies the selected Cloud Storage
-	 * object(s) into the other panel's folder, see {@link GcsCopyService}) and F8 "Delete" (removes
-	 * the selected object(s) from their bucket, see {@link GcsDeleteService}).
+	 * object(s) into the other panel's folder, see {@link GcsCopyService}), F7 "Make Folder" (creates
+	 * a folder in the current bucket, see {@link GcsMakeFolderService}), and F8 "Delete" (removes the
+	 * selected object(s) from their bucket, see {@link GcsDeleteService}).
 	 */
 	@Override
 	public List<NuclrMenuResource> menuItems(NuclrResource resource) {
 		return List.of(
 				new NuclrMenuResource("Copy", "F5", ACTION_COPY),
+				new NuclrMenuResource("Make Folder", "F7", ACTION_MAKE_FOLDER),
 				new NuclrMenuResource("Delete", "F8", ACTION_DELETE));
 	}
 
@@ -712,6 +726,11 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			return;
 		}
 
+		if (ACTION_MAKE_FOLDER.equals(actionType)) {
+			makeFolder(data);
+			return;
+		}
+
 		if (ACTION_DELETE.equals(actionType)) {
 			int deleted = new GcsDeleteService().delete(selectedResources, focusedResource);
 			if (deleted > 0) {
@@ -749,6 +768,51 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			GcpDiskCache.clearProjects();
 			log.info("GCP project listing invalidated on '{}'", actionType);
 		}
+	}
+
+	/**
+	 * Prompts for a folder name and creates it in the current bucket listing. Only valid inside a
+	 * bucket (a bucket root or a sub-folder); requests a panel reload (via {@code result.refresh})
+	 * so the new folder appears, with the cursor placed on it.
+	 */
+	private void makeFolder(Map<String, Object> data) {
+		if (!GcpResource.isBucket(currentResource) && !GcpResource.isObjectDir(currentResource)) {
+			SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(null,
+					"Open a bucket to create a folder.", "Make Folder", JOptionPane.INFORMATION_MESSAGE));
+			return;
+		}
+
+		String projectId = GcpResource.projectId(currentResource);
+		String bucket = GcpResource.bucketName(currentResource);
+		String prefix = GcpResource.objectPrefix(currentResource);
+
+		String created = new GcsMakeFolderService().makeFolder(bucket, prefix, currentListingNames());
+		if (created == null) {
+			return; // cancelled, invalid, duplicate, or failed — dialog already shown
+		}
+
+		// Drop the cached listing so the reload re-fetches and shows the new placeholder folder.
+		GcpDiskCache.clearObjects(bucket, prefix);
+		if (data != null) {
+			try {
+				data.put("result.refresh", true);
+				data.put("result.refresh.selected.resource",
+						GcpResource.objectDir(projectId, bucket, prefix + created + "/", created + "/"));
+			} catch (UnsupportedOperationException ignored) {
+				log.debug("Make-folder payload is immutable; new folder will not be pre-selected.");
+			}
+		}
+	}
+
+	/** Display names of the entries in the current object listing (excluding ".."), for duplicate checks. */
+	private Set<String> currentListingNames() {
+		Set<String> names = new HashSet<>();
+		for (NuclrResource row : pagerRows) {
+			if (row != null && !"..".equals(row.getName())) {
+				names.add(row.getName());
+			}
+		}
+		return names;
 	}
 
 	/**
