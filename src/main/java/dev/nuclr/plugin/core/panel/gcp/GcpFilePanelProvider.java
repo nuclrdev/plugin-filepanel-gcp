@@ -62,10 +62,11 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	/** How many objects to load per page (each "Load more…" fetches one more page). */
 	private static final int OBJECT_PAGE_SIZE = 1000;
 
-	/** How long a successful project/bucket list stays valid before {@code gcloud} is re-run. */
-	private static final long CACHE_TTL_MS = 5 * 60_000L;
-
-	/** {@code act} action that forces every cached listing to be re-fetched on next navigation. */
+	/**
+	 * {@code act} action that drops the cached listing for the currently-open level so the next
+	 * navigation re-fetches it (see {@link #act}). Cached listings otherwise persist across
+	 * restarts via {@link GcpDiskCache} rather than expiring on a timer.
+	 */
 	private static final String ACTION_REFRESH_PANEL = "refresh.panel";
 
 	private final String uuid = UUID.randomUUID().toString();
@@ -76,21 +77,22 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	private boolean focused;
 	private NuclrResource currentResource;
 
-	// Short-lived caches so re-entering a listing (e.g. ".." back from a project, or
-	// switching between GCS and Pub/Sub) does not re-run gcloud on every navigation.
-	// Written from the background read thread; cleared on the "refresh.panel" action.
+	// In-memory hot layer over the disk cache so re-entering a listing (e.g. ".." back from a
+	// project, or switching between GCS and Pub/Sub) does not touch disk on every navigation.
+	// Populated from disk / gcloud on first read; dropped for the open level on "refresh.panel".
 	private volatile List<GcpProject> cachedProjects;
-	private volatile long cachedAtMs;
 
 	/** Per-project bucket cache, keyed by project id. */
-	private record CachedBuckets(List<GcsBucket> buckets, long atMs) {}
-	private final Map<String, CachedBuckets> bucketCache = new ConcurrentHashMap<>();
+	private final Map<String, List<GcsBucket>> bucketCache = new ConcurrentHashMap<>();
 
 	// Active object listing: a live, lazily-consumed gcloud stream plus the rows shown so far.
 	// One listing is active at a time; navigating away closes the pager (see openResource).
 	private GcsObjectPager pager;
 	private String pagerKey;
 	private final List<NuclrResource> pagerRows = new ArrayList<>();
+	// Object models accumulated across pages of the active listing, persisted to the disk cache
+	// once the listing is fully loaded (see emitNextPage).
+	private final List<GcsObject> pagerObjects = new ArrayList<>();
 
 	// -------------------------------------------------------------------------
 	// Plugin metadata
@@ -431,9 +433,26 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 		// Row 0 is always ".." (up one prefix level, or back to the bucket list at the root).
 		pagerRows.clear();
+		pagerObjects.clear();
 		NuclrResource parent = GcpResource.objectParent(projectId, bucket, prefix);
 		pagerRows.add(parent);
 		add(data, sink, parent);
+
+		// A restart-persistent cache hit renders the whole listing without gcloud, so there is
+		// no live stream and no "Load more…" — the cached listing is the complete set of children.
+		List<GcsObject> cached = GcpDiskCache.loadObjects(bucket, prefix);
+		if (cached != null) {
+			for (GcsObject object : cached) {
+				if (cancelled != null && cancelled.get()) {
+					break;
+				}
+				NuclrResource entry = objectRow(projectId, bucket, prefix, object);
+				pagerRows.add(entry);
+				add(data, sink, entry);
+			}
+			log.info("GCS object listing gs://{}/{}: {} row(s) from disk cache", bucket, prefix, cached.size());
+			return data;
+		}
 
 		long openNanos = System.nanoTime();
 		try {
@@ -484,9 +503,8 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		List<GcsObject> page = pager.nextPage(OBJECT_PAGE_SIZE, cancelled);
 		long pageMs = millisSince(pageNanos);
 		for (GcsObject object : page) {
-			NuclrResource entry = object.folder()
-					? GcpResource.objectDir(projectId, bucket, prefix + object.name(), object.name())
-					: GcpResource.object(bucket, prefix + object.name(), object);
+			pagerObjects.add(object);
+			NuclrResource entry = objectRow(projectId, bucket, prefix, object);
 			pagerRows.add(entry);
 			add(data, sink, entry);
 		}
@@ -495,10 +513,19 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			// Transient continuation row — recomputed on each render, not accumulated.
 			add(data, sink, GcpResource.loadMore(projectId, bucket, prefix));
 		} else {
-			closePager(); // listing complete; free the process (rows already rendered)
+			// Listing complete: persist the full child set for instant re-open, then free the process.
+			GcpDiskCache.saveObjects(bucket, prefix, List.copyOf(pagerObjects));
+			closePager(); // rows already rendered
 		}
 		log.info("GCS object listing gs://{}/{}: +{} row(s) in {} ms, more={}",
 				bucket, prefix, page.size(), pageMs, pager != null && pager.hasMore());
+	}
+
+	/** An object listing row: a navigable sub-folder for a prefix, else a downloadable leaf object. */
+	private static NuclrResource objectRow(String projectId, String bucket, String prefix, GcsObject object) {
+		return object.folder()
+				? GcpResource.objectDir(projectId, bucket, prefix + object.name(), object.name())
+				: GcpResource.object(bucket, prefix + object.name(), object);
 	}
 
 	private NuclrResourceData newObjectData(EntrySink sink) {
@@ -518,6 +545,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		}
 		pagerKey = null;
 		pagerRows.clear();
+		pagerObjects.clear();
 	}
 
 	private static String pagerKey(String bucket, String prefix) {
@@ -552,24 +580,37 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	}
 
 	/**
-	 * Return the accessible projects, using a short-lived cache to avoid re-running
-	 * gcloud on every navigation. Returns {@code null} on a hard error (gcloud missing,
+	 * Return the accessible projects. Served from the in-memory hot layer, then the
+	 * restart-persistent {@link GcpDiskCache}, and only then from a live {@code gcloud} run
+	 * (whose result is persisted). Returns {@code null} on a hard error (gcloud missing,
 	 * not authenticated, timeout, command failure) — already surfaced via
 	 * {@link GcpErrorDialog}. "No projects accessible" is represented as an empty list.
 	 */
 	private List<GcpProject> projects() {
 
 		var cached = cachedProjects;
-		if (cached != null && System.currentTimeMillis() - cachedAtMs < CACHE_TTL_MS) {
+		if (cached != null) {
 			return cached;
+		}
+
+		List<GcpProject> disk = GcpDiskCache.loadProjects();
+		if (disk != null) {
+			cachedProjects = disk;
+			return disk;
 		}
 
 		GcpProjectRepository.Result result = repository.listProjects();
 		return switch (result) {
-			case GcpProjectRepository.Result.Ok ok -> cache(ok.projects());
+			case GcpProjectRepository.Result.Ok ok -> {
+				GcpDiskCache.saveProjects(ok.projects());
+				cachedProjects = ok.projects();
+				yield ok.projects();
+			}
 			case GcpProjectRepository.Result.Err err -> {
 				if (err.error() instanceof GcpError.NoProjectsAccessible) {
-					yield cache(List.of());
+					// Transient-looking "no projects": cache in memory only so a restart re-queries.
+					cachedProjects = List.of();
+					yield List.of();
 				}
 				log.warn("GCP project list failed: {}", err.error());
 				GcpErrorDialog.show(err.error());
@@ -578,28 +619,30 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		};
 	}
 
-	private List<GcpProject> cache(List<GcpProject> projects) {
-		cachedProjects = projects;
-		cachedAtMs = System.currentTimeMillis();
-		return projects;
-	}
-
 	/**
-	 * Return a project's Cloud Storage buckets, using a short-lived per-project cache to
-	 * avoid re-running gcloud on every navigation. Returns {@code null} on a hard error
-	 * (already surfaced via {@link GcpErrorDialog}); "no buckets" is an empty list.
+	 * Return a project's Cloud Storage buckets. Served from the in-memory hot layer, then the
+	 * restart-persistent {@link GcpDiskCache}, and only then from a live {@code gcloud} run
+	 * (whose result is persisted). Returns {@code null} on a hard error (already surfaced via
+	 * {@link GcpErrorDialog}); "no buckets" is an empty list.
 	 */
 	private List<GcsBucket> buckets(String projectId) {
 
-		CachedBuckets cached = bucketCache.get(projectId);
-		if (cached != null && System.currentTimeMillis() - cached.atMs() < CACHE_TTL_MS) {
-			return cached.buckets();
+		List<GcsBucket> cached = bucketCache.get(projectId);
+		if (cached != null) {
+			return cached;
+		}
+
+		List<GcsBucket> disk = GcpDiskCache.loadBuckets(projectId);
+		if (disk != null) {
+			bucketCache.put(projectId, disk);
+			return disk;
 		}
 
 		GcsBucketRepository.Result result = bucketRepository.listBuckets(projectId);
 		return switch (result) {
 			case GcsBucketRepository.Result.Ok ok -> {
-				bucketCache.put(projectId, new CachedBuckets(ok.buckets(), System.currentTimeMillis()));
+				GcpDiskCache.saveBuckets(projectId, ok.buckets());
+				bucketCache.put(projectId, ok.buckets());
 				yield ok.buckets();
 			}
 			case GcsBucketRepository.Result.Err err -> {
@@ -615,16 +658,35 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	// -------------------------------------------------------------------------
 
 	/**
-	 * Handles panel actions. On {@value #ACTION_REFRESH_PANEL} the cached project and bucket
-	 * listings are dropped so the next navigation re-queries gcloud; other actions are ignored.
+	 * Handles panel actions. On {@value #ACTION_REFRESH_PANEL} only the cached listing for the
+	 * <em>currently open</em> level is dropped — projects at the root, that project's buckets in
+	 * the GCS service, or that {@code (bucket, prefix)}'s objects inside a bucket — so the host's
+	 * follow-up reload re-queries just what the user is looking at. Other levels keep their
+	 * persistent cache. Other actions are ignored.
 	 */
 	@Override
 	public void act(BaseNuclrPlugin other, String actionType, List<NuclrResource> selectedResources,
 			NuclrResource focusedResource, Map<String, Object> data, NuclrPluginCallback callback) {
-		if (ACTION_REFRESH_PANEL.equals(actionType)) {
+		if (!ACTION_REFRESH_PANEL.equals(actionType)) {
+			return;
+		}
+
+		if (GcpResource.isBucket(currentResource) || GcpResource.isObjectDir(currentResource)) {
+			String bucket = GcpResource.bucketName(currentResource);
+			String prefix = GcpResource.objectPrefix(currentResource);
+			GcpDiskCache.clearObjects(bucket, prefix);
+			closePager(); // drop any live stream for this listing so the reload re-fetches it
+			log.info("GCP object listing gs://{}/{} invalidated on '{}'", bucket, prefix, actionType);
+		} else if (GcpResource.isService(currentResource)
+				&& GcpResource.SERVICE_GCS.equals(GcpResource.serviceType(currentResource))) {
+			String projectId = GcpResource.projectId(currentResource);
+			bucketCache.remove(projectId);
+			GcpDiskCache.clearBuckets(projectId);
+			log.info("GCS bucket listing for {} invalidated on '{}'", projectId, actionType);
+		} else if (GcpResource.isRoot(currentResource)) {
 			cachedProjects = null;
-			bucketCache.clear();
-			log.info("GCP panel caches invalidated on '{}'", actionType);
+			GcpDiskCache.clearProjects();
+			log.info("GCP project listing invalidated on '{}'", actionType);
 		}
 	}
 
