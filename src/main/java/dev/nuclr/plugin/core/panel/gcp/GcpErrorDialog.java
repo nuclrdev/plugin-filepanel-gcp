@@ -31,6 +31,8 @@ public final class GcpErrorDialog {
                 "gcloud error:\n\n" + f.stderr();
             case GcpError.NoProjectsAccessible ignored ->
                 null; // handled inline — no modal
+            case GcpError.Cancelled ignored ->
+                null; // user-initiated cancel — nothing to report
         };
 
         if (message == null) {

@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import dev.nuclr.platform.plugin.BaseNuclrPlugin;
 import dev.nuclr.platform.plugin.FilePanelNuclrPlugin;
 import dev.nuclr.platform.plugin.NuclrPluginCallback;
+import dev.nuclr.platform.plugin.NuclrMenuResource;
 import dev.nuclr.platform.plugin.NuclrPluginContext;
 import dev.nuclr.platform.plugin.NuclrResource;
 import lombok.extern.slf4j.Slf4j;
@@ -77,6 +78,12 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	 * than downloading it (quick view — Ctrl+Q — still downloads for local preview).
 	 */
 	private static final String ACTION_PATH_OPENED = "filepanel.path.opened";
+
+	/**
+	 * {@code act} action dispatched by the host for the F5 "Copy" function key. The selected GCS
+	 * objects are copied into the other panel's current folder (see {@link GcsCopyService}).
+	 */
+	private static final String ACTION_COPY = "filepanel.copy";
 
 	private final String uuid = UUID.randomUUID().toString();
 	private final GcpProjectRepository repository = new GcpProjectRepository();
@@ -254,6 +261,15 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	@Override
 	public boolean supports(NuclrResource resource) {
 		return GcpResource.isGcpResource(resource);
+	}
+
+	/**
+	 * Bottom-bar function keys for the GCP panel. Only F5 "Copy" is offered: it copies the
+	 * selected Cloud Storage object(s) into the other panel's folder (see {@link GcsCopyService}).
+	 */
+	@Override
+	public List<NuclrMenuResource> menuItems(NuclrResource resource) {
+		return List.of(new NuclrMenuResource("Copy", "F5", ACTION_COPY));
 	}
 
 	@Override
@@ -679,6 +695,11 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 		if (ACTION_PATH_OPENED.equals(actionType)) {
 			openInConsole(focusedResource);
+			return;
+		}
+
+		if (ACTION_COPY.equals(actionType)) {
+			new GcsCopyService().copy(other, selectedResources, focusedResource, context);
 			return;
 		}
 

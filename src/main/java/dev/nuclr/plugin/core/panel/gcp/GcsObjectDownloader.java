@@ -1,6 +1,8 @@
 package dev.nuclr.plugin.core.panel.gcp;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -12,6 +14,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -41,12 +44,29 @@ final class GcsObjectDownloader {
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(120);
     private static final Duration WARM_TIMEOUT = Duration.ofSeconds(10);
 
+    private static final int BUFFER = 64 * 1024;
+
+    /** Receives running byte progress while a download streams; {@code total} is {@code -1} if unknown. */
+    @FunctionalInterface
+    interface ProgressListener {
+        void onBytes(long transferred, long total);
+    }
+
+    /**
+     * Downloads {@code gs://bucket/key} into {@code destination}, overwriting it. Convenience form
+     * with no progress reporting and no cancellation.
+     */
+    Result downloadToFile(String bucket, String key, Path destination) {
+        return downloadToFile(bucket, key, destination, null, null);
+    }
+
     /**
      * Downloads {@code gs://bucket/key} into {@code destination}, overwriting it. Tries the
      * bucket's regional endpoint first and falls back to the global one; refreshes the access
-     * token once and retries on a 401.
+     * token once and retries on a 401. Reports byte progress to {@code listener} (if non-null) and
+     * aborts promptly when {@code cancelled} turns true, returning a {@link GcpError.Cancelled}.
      */
-    Result downloadToFile(String bucket, String key, Path destination) {
+    Result downloadToFile(String bucket, String key, Path destination, ProgressListener listener, BooleanSupplier cancelled) {
         String regional = GcsEndpoints.host(bucket);
         List<String> hosts = regional.equals(GcsEndpoints.GLOBAL_HOST)
                 ? List.of(GcsEndpoints.GLOBAL_HOST)
@@ -54,16 +74,20 @@ final class GcsObjectDownloader {
 
         Result last = new Result.Err(new GcpError.CommandFailed("no endpoint tried"));
         for (String host : hosts) {
-            last = attempt(host, bucket, key, destination);
-            if (last instanceof Result.Ok) {
-                return last;
+            if (isCancelled(cancelled)) {
+                return new Result.Err(new GcpError.Cancelled());
+            }
+            last = attempt(host, bucket, key, destination, listener, cancelled);
+            if (last instanceof Result.Ok || last instanceof Result.Err err && err.error() instanceof GcpError.Cancelled) {
+                return last; // success, or a user cancel we must not retry on the fallback host
             }
         }
         return last;
     }
 
     /** One host, with a single token-refresh retry on 401. */
-    private Result attempt(String host, String bucket, String key, Path destination) {
+    private Result attempt(String host, String bucket, String key, Path destination,
+            ProgressListener listener, BooleanSupplier cancelled) {
         for (int tokenAttempt = 0; tokenAttempt < 2; tokenAttempt++) {
             String token;
             try {
@@ -79,24 +103,28 @@ final class GcsObjectDownloader {
                     .build();
             long startNanos = System.nanoTime();
             try {
-                // ofFile streams the body straight to disk and returns the connection to the pool,
-                // so back-to-back downloads reuse the warm TLS session.
-                HttpResponse<Path> response = HTTP.send(request, HttpResponse.BodyHandlers.ofFile(
-                        destination, StandardOpenOption.CREATE, StandardOpenOption.WRITE,
-                        StandardOpenOption.TRUNCATE_EXISTING));
-                long elapsedMs = millisSince(startNanos);
+                // ofInputStream lets us stream to disk ourselves so we can report byte progress and
+                // stop on cancel; the connection returns to the pool once the body stream is closed.
+                HttpResponse<InputStream> response = HTTP.send(request, HttpResponse.BodyHandlers.ofInputStream());
                 int status = response.statusCode();
                 if (status == 200) {
+                    long total = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
+                    boolean cancelledMidStream = streamToFile(response.body(), destination, total, listener, cancelled);
+                    long elapsedMs = millisSince(startNanos);
+                    if (cancelledMidStream) {
+                        log.info("GCS GET gs://{}/{} via {}: cancelled after {} ms", bucket, key, host, elapsedMs);
+                        return new Result.Err(new GcpError.Cancelled());
+                    }
                     log.info("GCS GET gs://{}/{} via {}: {} bytes in {} ms", bucket, key, host, sizeOf(destination), elapsedMs);
                     return new Result.Ok();
                 }
-                String detail = snippet(destination);
+                String detail = snippet(response.body());
                 if (status == 401 && tokenAttempt == 0) {
-                    log.info("GCS GET gs://{}/{} via {}: 401 after {} ms, refreshing token", bucket, key, host, elapsedMs);
+                    log.info("GCS GET gs://{}/{} via {}: 401 after {} ms, refreshing token", bucket, key, host, millisSince(startNanos));
                     GcsAccessToken.invalidate();
                     continue; // token expired mid-session; refresh and retry once
                 }
-                log.warn("GCS GET gs://{}/{} via {}: HTTP {} in {} ms", bucket, key, host, status, elapsedMs);
+                log.warn("GCS GET gs://{}/{} via {}: HTTP {} in {} ms", bucket, key, host, status, millisSince(startNanos));
                 return new Result.Err(classify(status, detail));
             } catch (IOException e) {
                 log.warn("GCS GET gs://{}/{} via {} failed after {} ms: {}", bucket, key, host, millisSince(startNanos), e.getMessage());
@@ -107,6 +135,37 @@ final class GcsObjectDownloader {
             }
         }
         return new Result.Err(new GcpError.NotAuthenticated());
+    }
+
+    /**
+     * Streams {@code body} to {@code destination}, reporting progress and checking {@code cancelled}
+     * between buffers. Returns {@code true} if it stopped early because of cancellation (leaving a
+     * partial file the caller is expected to discard).
+     */
+    private static boolean streamToFile(InputStream body, Path destination, long total,
+            ProgressListener listener, BooleanSupplier cancelled) throws IOException {
+        try (InputStream in = body;
+                OutputStream out = Files.newOutputStream(destination, StandardOpenOption.CREATE,
+                        StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
+            byte[] buffer = new byte[BUFFER];
+            long transferred = 0;
+            int read;
+            while ((read = in.read(buffer)) >= 0) {
+                if (isCancelled(cancelled)) {
+                    return true;
+                }
+                out.write(buffer, 0, read);
+                transferred += read;
+                if (listener != null) {
+                    listener.onBytes(transferred, total);
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean isCancelled(BooleanSupplier cancelled) {
+        return cancelled != null && cancelled.getAsBoolean();
     }
 
     /**
@@ -159,12 +218,11 @@ final class GcsObjectDownloader {
         }
     }
 
-    /** Read a short, bounded snippet of an error body that ofFile wrote to {@code file}. */
-    private static String snippet(Path file) {
-        try {
-            byte[] bytes = Files.readAllBytes(file);
-            int len = Math.min(bytes.length, 1024);
-            return new String(bytes, 0, len, StandardCharsets.UTF_8).strip();
+    /** Read a short, bounded snippet of an error response body (and drain/close it). */
+    private static String snippet(InputStream body) {
+        try (InputStream in = body) {
+            byte[] bytes = in.readNBytes(1024);
+            return new String(bytes, StandardCharsets.UTF_8).strip();
         } catch (IOException e) {
             return "";
         }

@@ -2,7 +2,8 @@ package dev.nuclr.plugin.core.panel.gcp;
 
 public sealed interface GcpError
         permits GcpError.GcloudNotFound, GcpError.NotAuthenticated,
-                GcpError.NoProjectsAccessible, GcpError.CommandFailed, GcpError.Timeout {
+                GcpError.NoProjectsAccessible, GcpError.CommandFailed, GcpError.Timeout,
+                GcpError.Cancelled {
 
     /** gcloud binary is not on PATH. */
     record GcloudNotFound() implements GcpError {}
@@ -18,4 +19,7 @@ public sealed interface GcpError
 
     /** gcloud process did not complete within the timeout window. */
     record Timeout() implements GcpError {}
+
+    /** The operation was cancelled by the user (e.g. Cancel pressed during a copy). */
+    record Cancelled() implements GcpError {}
 }
