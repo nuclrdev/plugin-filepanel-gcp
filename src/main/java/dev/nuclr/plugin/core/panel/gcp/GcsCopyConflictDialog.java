@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.function.Predicate;
 
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
@@ -31,16 +32,16 @@ import javax.swing.SwingUtilities;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * The "File already exists" warning shown when an F5 copy from the GCP panel would overwrite a
- * file that is already present in the destination folder. Mirrors the local file-system plugin's
- * conflict dialog (the two plugins load in isolated classloaders, so the UI is intentionally
- * duplicated) — Overwrite / Skip / Rename / Append / Cancel, with a "Remember choice" checkbox
- * that applies the same answer to later clashes in the same copy run.
+ * The "File already exists" warning shown when an F5 copy would overwrite an item that already
+ * exists at the destination — used for both directions (downloading a GCS object to a local folder,
+ * and uploading a local file into a bucket), so it is deliberately transport-agnostic: the caller
+ * passes already-formatted description strings for the "New" and "Existing" rows and a target label,
+ * rather than a {@link Path}. Mirrors the local file-system plugin's conflict dialog: Overwrite /
+ * Skip / Rename / Append / Cancel, with a "Remember choice" checkbox that applies the same answer to
+ * later clashes in the same run.
  *
- * <p>The "New" row describes the source GCS object (its display size and update time, since the
- * exact byte count is only known after download); the "Existing" row reads the target file's
- * attributes. Methods marshal to the EDT and block for the answer, so the resolver is safe to
- * call from the background copy thread.
+ * <p>Methods marshal to the EDT and block for the answer, so the resolver is safe to call from the
+ * background copy thread.
  */
 @Slf4j
 final class GcsCopyConflictDialog {
@@ -48,8 +49,8 @@ final class GcsCopyConflictDialog {
     /** What to do about a single name clash. */
     enum Action { OVERWRITE, SKIP, RENAME, APPEND, CANCEL }
 
-    /** A chosen {@link Action} plus, for {@link Action#RENAME}, the new target ({@code null} = auto). */
-    record Resolution(Action action, Path renameTarget) {
+    /** A chosen {@link Action} plus, for {@link Action#RENAME}, the new name ({@code null} = auto). */
+    record Resolution(Action action, String renameName) {
         static Resolution of(Action action) {
             return new Resolution(action, null);
         }
@@ -61,19 +62,23 @@ final class GcsCopyConflictDialog {
     private Resolution remembered;
 
     /**
-     * Resolve a clash for {@code target}, describing the incoming object with {@code newSizeText}
-     * and {@code newWhenText} (already display-formatted by the listing).
+     * Resolve a clash.
+     *
+     * @param targetLabel       shown under the title (e.g. a local path or a {@code gs://} URL)
+     * @param newDetail         "New" row text (source size + timestamp)
+     * @param existingDetail    "Existing" row text (existing size + timestamp)
+     * @param defaultRenameName pre-filled suggestion in the Rename prompt
      */
-    Resolution resolve(String newSizeText, String newWhenText, Path target) {
+    Resolution resolve(String targetLabel, String newDetail, String existingDetail, String defaultRenameName) {
         if (remembered != null) {
             return remembered;
         }
         final Resolution[] result = new Resolution[1];
-        runOnEdtAndWait(() -> result[0] = ask(newSizeText, newWhenText, target));
+        runOnEdtAndWait(() -> result[0] = ask(targetLabel, newDetail, existingDetail, defaultRenameName));
         return result[0];
     }
 
-    private Resolution ask(String newSizeText, String newWhenText, Path target) {
+    private Resolution ask(String targetLabel, String newDetail, String existingDetail, String defaultRenameName) {
 
         Window owner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow();
         JDialog dialog = new JDialog(owner, "Warning", JDialog.ModalityType.APPLICATION_MODAL);
@@ -84,12 +89,12 @@ final class GcsCopyConflictDialog {
 
         JPanel header = new JPanel(new BorderLayout(0, 4));
         header.add(title, BorderLayout.NORTH);
-        header.add(new JLabel(target.toString()), BorderLayout.CENTER);
+        header.add(new JLabel(targetLabel), BorderLayout.CENTER);
 
         JPanel info = new JPanel(new GridLayout(2, 1, 0, 2));
         info.setBorder(BorderFactory.createEmptyBorder(8, 0, 8, 0));
-        info.add(detailRow("New", blank(newSizeText) + "   " + blank(newWhenText)));
-        info.add(detailRow("Existing", existingDetail(target)));
+        info.add(detailRow("New", newDetail));
+        info.add(detailRow("Existing", existingDetail));
 
         JCheckBox remember = new JCheckBox("Remember choice");
 
@@ -114,17 +119,17 @@ final class GcsCopyConflictDialog {
             dialog.dispose();
         });
         rename.addActionListener(e -> {
-            // When remembering, store the auto-rename policy (null target → each clash auto-named).
+            // When remembering, store the auto-rename policy (null name → each clash auto-named).
             if (remember.isSelected()) {
                 picked[0] = Resolution.of(Action.RENAME);
                 dialog.dispose();
                 return;
             }
-            Path newTarget = promptRename(owner, target);
-            if (newTarget == null) {
+            String newName = promptRename(owner, defaultRenameName);
+            if (newName == null) {
                 return; // back to the warning dialog
             }
-            picked[0] = new Resolution(Action.RENAME, newTarget);
+            picked[0] = new Resolution(Action.RENAME, newName);
             dialog.dispose();
         });
         cancel.addActionListener(e -> {
@@ -174,19 +179,19 @@ final class GcsCopyConflictDialog {
         return resolution;
     }
 
-    /** @return the chosen new target path, or {@code null} if the rename was cancelled. */
-    private Path promptRename(Window owner, Path target) {
+    /** @return the chosen new name, or {@code null} if the rename was cancelled. */
+    private String promptRename(Window owner, String defaultName) {
 
         JDialog dialog = new JDialog(owner, "Rename", JDialog.ModalityType.APPLICATION_MODAL);
         dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
 
-        JTextField field = new JTextField(autoRename(target).toString(), 40);
+        JTextField field = new JTextField(defaultName == null ? "" : defaultName, 40);
 
         JPanel top = new JPanel(new BorderLayout(0, 4));
         top.add(new JLabel("New name:"), BorderLayout.NORTH);
         top.add(field, BorderLayout.CENTER);
 
-        final Path[] result = new Path[1];
+        final String[] result = new String[1];
 
         JButton ok = new JButton("OK");
         JButton cancel = new JButton("Cancel");
@@ -195,12 +200,8 @@ final class GcsCopyConflictDialog {
             if (text.isEmpty()) {
                 return;
             }
-            try {
-                result[0] = Path.of(text);
-                dialog.dispose();
-            } catch (RuntimeException ex) {
-                log.debug("Invalid rename target [{}]: {}", text, ex.getMessage());
-            }
+            result[0] = text;
+            dialog.dispose();
         });
         cancel.addActionListener(e -> dialog.dispose());
 
@@ -227,23 +228,21 @@ final class GcsCopyConflictDialog {
         return result[0];
     }
 
-    /** {@code README.md} → {@code README (1).md}, incrementing until a free name is found. */
-    static Path autoRename(Path target) {
-        Path dir = target.getParent();
-        String name = target.getFileName().toString();
+    /** {@code README.md} → {@code README (1).md}, incrementing until {@code exists} rejects it. */
+    static String autoRenameName(String name, Predicate<String> exists) {
         int dot = name.lastIndexOf('.');
         String base = dot <= 0 ? name : name.substring(0, dot);
         String ext = dot <= 0 ? "" : name.substring(dot);
         for (int i = 1; ; i++) {
             String candidate = base + " (" + i + ")" + ext;
-            Path path = dir == null ? Path.of(candidate) : dir.resolve(candidate);
-            if (!Files.exists(path)) {
-                return path;
+            if (!exists.test(candidate)) {
+                return candidate;
             }
         }
     }
 
-    private static String existingDetail(Path path) {
+    /** Size + last-modified timestamp of a local file, formatted for a detail row ({@code "?"} if unreadable). */
+    static String pathDetail(Path path) {
         try {
             BasicFileAttributes a = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
             return a.size() + "   " + STAMP.format(a.lastModifiedTime().toInstant().atZone(ZoneId.systemDefault()));
@@ -255,12 +254,8 @@ final class GcsCopyConflictDialog {
     private static JComponent detailRow(String label, String detail) {
         JPanel row = new JPanel(new BorderLayout(12, 0));
         row.add(new JLabel(label), BorderLayout.WEST);
-        row.add(new JLabel(detail, JLabel.RIGHT), BorderLayout.EAST);
+        row.add(new JLabel(detail == null ? "" : detail, JLabel.RIGHT), BorderLayout.EAST);
         return row;
-    }
-
-    private static String blank(String value) {
-        return value == null ? "" : value;
     }
 
     /**

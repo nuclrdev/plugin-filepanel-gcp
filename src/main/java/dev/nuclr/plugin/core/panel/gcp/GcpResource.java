@@ -213,9 +213,12 @@ public final class GcpResource extends NuclrResource {
 	}
 
 	/**
-	 * Streams this object's content. For an object resource (path-less by default), the object
-	 * is downloaded to a local temp file on first access; the temp file is then adopted as this
-	 * resource's {@link #getPath() path} and scheduled for deletion via {@link GcsTempFiles}.
+	 * Streams this object's content. For an object resource (path-less by default), the object is
+	 * downloaded to a local temp file on first access and reused from {@link GcsTempFiles} on later
+	 * accesses. The temp file is deliberately <b>not</b> adopted as this resource's {@link #getPath()
+	 * path}: keeping the resource path-less preserves its {@linkplain #isGcpResource virtual identity}
+	 * so activating it (Enter) still routes to this plugin — which opens the object's Cloud Console
+	 * page — rather than the host opening the downloaded temp file in a local application.
 	 * The host's built-in quick-view providers select by {@link #getName() name} and read through
 	 * this stream, so no GCS-specific viewer is needed.
 	 */
@@ -230,21 +233,17 @@ public final class GcpResource extends NuclrResource {
 	/** Download-once: returns the local temp file backing this object, fetching it if needed. */
 	private synchronized Path materialize() throws IOException {
 		long startNanos = System.nanoTime();
-		Path existing = getPath();
-		if (existing != null && Files.exists(existing)) {
-			return existing;
-		}
 		String bucket = bucketName(this);
 		String key = objectKey(this);
 		if (bucket == null || key == null) {
 			throw new IOException("Not a downloadable GCS object: " + getName());
 		}
 
-		// Reuse a previous download of the same object, even across listing rebuilds.
+		// Reuse a previous download of the same object, even across listing rebuilds. The mapping
+		// lives in GcsTempFiles (keyed by gs:// key), so we never stamp the path onto the resource.
 		String gsKey = bucket + "/" + key;
 		Path cached = GcsTempFiles.cached(gsKey);
 		if (cached != null) {
-			setPath(cached);
 			log.info("Quick view gs://{}: served from local cache ({} ms)", gsKey, millisSince(startNanos));
 			return cached;
 		}
@@ -255,7 +254,6 @@ public final class GcpResource extends NuclrResource {
 			Files.deleteIfExists(temp);
 			throw new IOException("Failed to download gs://" + bucket + "/" + key + ": " + err.error());
 		}
-		setPath(temp);
 		GcsTempFiles.register(gsKey, temp);
 		log.info("Quick view gs://{}: downloaded and ready in {} ms", gsKey, millisSince(startNanos));
 		return temp;

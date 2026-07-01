@@ -4,6 +4,7 @@ import java.awt.Desktop;
 import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -89,6 +90,13 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	 * objects are copied into the other panel's current folder (see {@link GcsCopyService}).
 	 */
 	private static final String ACTION_COPY = "filepanel.copy";
+
+	/**
+	 * {@code act} action a source plugin dispatches to this plugin to hand off a copy it initiated
+	 * (F5 in the other panel). The source files are uploaded into the bucket listing open here (see
+	 * {@link GcsCopyService#acceptCopy}).
+	 */
+	private static final String ACTION_ACCEPT_COPY = "accept.copy";
 
 	/**
 	 * {@code act} action dispatched by the host for the F8 "Delete" function key. The selected (or
@@ -726,6 +734,12 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			return;
 		}
 
+		if (ACTION_ACCEPT_COPY.equals(actionType)) {
+			new GcsCopyService().acceptCopy(
+					selectedResources, focusedResource, currentResource, context, uuid, currentListingByName());
+			return;
+		}
+
 		if (ACTION_MAKE_FOLDER.equals(actionType)) {
 			makeFolder(data);
 			return;
@@ -813,6 +827,17 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			}
 		}
 		return names;
+	}
+
+	/** Display name → resource for the current object listing (excluding ".."), for the upload conflict check. */
+	private Map<String, NuclrResource> currentListingByName() {
+		Map<String, NuclrResource> byName = new HashMap<>();
+		for (NuclrResource row : pagerRows) {
+			if (row != null && !"..".equals(row.getName())) {
+				byName.put(row.getName(), row);
+			}
+		}
+		return byName;
 	}
 
 	/**

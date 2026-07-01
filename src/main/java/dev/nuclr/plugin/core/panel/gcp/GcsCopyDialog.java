@@ -40,7 +40,83 @@ final class GcsCopyDialog {
     /** How an already-existing target is resolved: {@code null} action means "Ask" (prompt per clash). */
     record Options(Path destination, Action existing) {}
 
+    /** Upload (accept-copy) choice: the conflict mode ({@code null} = Ask). */
+    record Upload(Action existing) {}
+
     private GcsCopyDialog() {
+    }
+
+    /**
+     * Setup dialog for accepting a copy <em>into</em> a bucket (upload). The destination is fixed
+     * (shown read-only as a {@code gs://} URL); only the already-existing-files behaviour is chosen.
+     *
+     * @param header          what is being copied (e.g. {@code "1.jpg"} or {@code "3 items"})
+     * @param destinationLabel the {@code gs://bucket/prefix} the files will be uploaded into
+     * @return the chosen options, or {@code null} if the user cancelled
+     */
+    static Upload showUpload(String header, String destinationLabel) {
+        final Upload[] result = new Upload[1];
+        runOnEdtAndWait(() -> result[0] = buildUpload(header, destinationLabel));
+        return result[0];
+    }
+
+    private static Upload buildUpload(String header, String destinationLabel) {
+
+        Window owner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow();
+        JDialog dialog = new JDialog(owner, TITLE, JDialog.ModalityType.APPLICATION_MODAL);
+        dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+
+        JTextField destField = new JTextField(destinationLabel, 40);
+        destField.setEditable(false);
+        JPanel destPanel = new JPanel(new BorderLayout(0, 4));
+        destPanel.add(new JLabel("Copy " + header + " to:"), BorderLayout.NORTH);
+        destPanel.add(destField, BorderLayout.CENTER);
+
+        JComboBox<String> existing = new JComboBox<>(new String[] {
+                "Ask", "Overwrite", "Skip", "Rename", "Append" });
+        JPanel existingRow = new JPanel(new BorderLayout(8, 0));
+        existingRow.add(new JLabel("Already existing files:"), BorderLayout.WEST);
+        existingRow.add(existing, BorderLayout.CENTER);
+
+        JButton copyButton = new JButton("Copy");
+        JButton cancelButton = new JButton("Cancel");
+        final Upload[] chosen = new Upload[1];
+
+        copyButton.addActionListener(e -> {
+            chosen[0] = new Upload(existingAction(existing.getSelectedIndex()));
+            dialog.dispose();
+        });
+        cancelButton.addActionListener(e -> dialog.dispose());
+
+        dialog.getRootPane().registerKeyboardAction(e -> dialog.dispose(),
+                KeyStroke.getKeyStroke("ESCAPE"), JComponent.WHEN_IN_FOCUSED_WINDOW);
+
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 0));
+        buttons.add(copyButton);
+        buttons.add(cancelButton);
+
+        JPanel body = new JPanel();
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+        body.setBorder(BorderFactory.createEmptyBorder(14, 16, 10, 16));
+        destPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        existingRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(destPanel);
+        body.add(Box.createVerticalStrut(10));
+        body.add(existingRow);
+
+        JPanel content = new JPanel(new BorderLayout(0, 10));
+        content.add(body, BorderLayout.CENTER);
+        content.add(buttons, BorderLayout.SOUTH);
+
+        dialog.setContentPane(content);
+        dialog.getRootPane().setDefaultButton(copyButton);
+        dialog.pack();
+        dialog.setMinimumSize(new Dimension(520, dialog.getHeight()));
+        dialog.setLocationRelativeTo(owner);
+        SwingUtilities.invokeLater(copyButton::requestFocusInWindow);
+        dialog.setVisible(true);
+
+        return chosen[0];
     }
 
     /**
