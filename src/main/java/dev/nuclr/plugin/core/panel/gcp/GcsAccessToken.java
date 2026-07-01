@@ -3,6 +3,8 @@ package dev.nuclr.plugin.core.panel.gcp;
 import java.io.IOException;
 import java.util.List;
 
+import lombok.extern.slf4j.Slf4j;
+
 /**
  * Supplies an OAuth2 access token for the GCS REST API, obtained once via
  * {@code gcloud auth print-access-token} and cached until shortly before it expires.
@@ -11,6 +13,7 @@ import java.util.List;
  * quick view slow. Tokens are valid ~1 hour; caching them means subsequent downloads are plain
  * HTTPS GETs with no gcloud process at all.
  */
+@Slf4j
 final class GcsAccessToken {
 
     /** Refresh well before the ~1h expiry to avoid races with token expiration. */
@@ -44,6 +47,7 @@ final class GcsAccessToken {
     }
 
     private static String fetch() throws IOException {
+        long startNanos = System.nanoTime();
         try {
             GcloudCli.CliResult result = CLI.execute(List.of("auth", "print-access-token"));
             if (result.exitCode() != 0) {
@@ -53,6 +57,7 @@ final class GcsAccessToken {
             if (value.isEmpty()) {
                 throw new IOException("gcloud returned an empty access token");
             }
+            log.info("Fetched GCS access token via gcloud in {} ms", (System.nanoTime() - startNanos) / 1_000_000L);
             return value;
         } catch (GcloudCli.GcloudNotFoundException e) {
             throw new IOException("gcloud CLI not found", e);

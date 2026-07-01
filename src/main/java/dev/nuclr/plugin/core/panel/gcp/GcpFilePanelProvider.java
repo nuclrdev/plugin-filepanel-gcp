@@ -192,6 +192,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		bucketCache.clear();
 		closePager();
 		GcsTempFiles.cleanup();
+		GcsEndpoints.clear();
 		log.info("GCP file panel plugin unloaded");
 	}
 
@@ -389,6 +390,8 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			if (cancelled != null && cancelled.get()) {
 				break;
 			}
+			// Remember each bucket's region so object downloads can use the regional endpoint.
+			GcsEndpoints.recordLocation(bucket.name(), bucket.location());
 			add(data, sink, GcpResource.bucket(projectId, bucket));
 		}
 		log.info("GCS bucket listing for {}: {} bucket(s)", projectId, buckets.size());
@@ -421,9 +424,10 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 		var data = newObjectData(sink);
 
-		// The user is heading toward objects; warm the access token now so the first quick-view
-		// download is a plain HTTPS GET rather than also paying the one-time gcloud token fetch.
-		warmAccessToken();
+		// The user is heading toward objects; warm the access token and a TLS connection to the
+		// bucket's endpoint now, so the first quick-view download skips both the one-time gcloud
+		// token fetch and the cold handshake.
+		warmGcs(bucket);
 
 		// Row 0 is always ".." (up one prefix level, or back to the bucket list at the root).
 		pagerRows.clear();
@@ -431,6 +435,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		pagerRows.add(parent);
 		add(data, sink, parent);
 
+		long openNanos = System.nanoTime();
 		try {
 			pager = GcsObjectPager.open(bucket, prefix);
 			pagerKey = pagerKey(bucket, prefix);
@@ -440,6 +445,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			closePager();
 			return data; // just ".."
 		}
+		log.info("GCS object stream opened for gs://{}/{} in {} ms", bucket, prefix, millisSince(openNanos));
 
 		emitNextPage(projectId, bucket, prefix, data, cancelled, sink);
 		return data;
@@ -474,7 +480,9 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			String projectId, String bucket, String prefix, NuclrResourceData data,
 			AtomicBoolean cancelled, EntrySink sink) {
 
+		long pageNanos = System.nanoTime();
 		List<GcsObject> page = pager.nextPage(OBJECT_PAGE_SIZE, cancelled);
+		long pageMs = millisSince(pageNanos);
 		for (GcsObject object : page) {
 			NuclrResource entry = object.folder()
 					? GcpResource.objectDir(projectId, bucket, prefix + object.name(), object.name())
@@ -489,8 +497,8 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		} else {
 			closePager(); // listing complete; free the process (rows already rendered)
 		}
-		log.info("GCS object listing gs://{}/{}: +{} row(s), more={}",
-				bucket, prefix, page.size(), pager != null && pager.hasMore());
+		log.info("GCS object listing gs://{}/{}: +{} row(s) in {} ms, more={}",
+				bucket, prefix, page.size(), pageMs, pager != null && pager.hasMore());
 	}
 
 	private NuclrResourceData newObjectData(EntrySink sink) {
@@ -516,15 +524,13 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		return bucket + ' ' + prefix;
 	}
 
-	/** Pre-fetch the GCS access token off-thread so it is cached before the first quick view. */
-	private static void warmAccessToken() {
-		Thread.ofVirtual().start(() -> {
-			try {
-				GcsAccessToken.get(false);
-			} catch (IOException ignored) {
-				// Best-effort warm-up; the real download will surface any token error.
-			}
-		});
+	/** Off-thread, prime the access token and a TLS connection so the first quick view is warm. */
+	private static void warmGcs(String bucket) {
+		Thread.ofVirtual().start(() -> GcsObjectDownloader.warmConnection(bucket));
+	}
+
+	private static long millisSince(long startNanos) {
+		return (System.nanoTime() - startNanos) / 1_000_000L;
 	}
 
 	/** Display label for an object "directory": the bucket name at the root, else the last segment. */

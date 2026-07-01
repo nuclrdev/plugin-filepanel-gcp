@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
 import dev.nuclr.platform.plugin.NuclrResource;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Virtual, path-less resource for the GCP panel.
@@ -26,6 +27,7 @@ import dev.nuclr.platform.plugin.NuclrResource;
  * pattern, the resource is purely in-memory; the table renders each column from the
  * resource {@code metadata}.
  */
+@Slf4j
 public final class GcpResource extends NuclrResource {
 
 	private static final long serialVersionUID = 1L;
@@ -224,6 +226,7 @@ public final class GcpResource extends NuclrResource {
 
 	/** Download-once: returns the local temp file backing this object, fetching it if needed. */
 	private synchronized Path materialize() throws IOException {
+		long startNanos = System.nanoTime();
 		Path existing = getPath();
 		if (existing != null && Files.exists(existing)) {
 			return existing;
@@ -239,6 +242,7 @@ public final class GcpResource extends NuclrResource {
 		Path cached = GcsTempFiles.cached(gsKey);
 		if (cached != null) {
 			setPath(cached);
+			log.info("Quick view gs://{}: served from local cache ({} ms)", gsKey, millisSince(startNanos));
 			return cached;
 		}
 
@@ -250,7 +254,12 @@ public final class GcpResource extends NuclrResource {
 		}
 		setPath(temp);
 		GcsTempFiles.register(gsKey, temp);
+		log.info("Quick view gs://{}: downloaded and ready in {} ms", gsKey, millisSince(startNanos));
 		return temp;
+	}
+
+	private static long millisSince(long startNanos) {
+		return (System.nanoTime() - startNanos) / 1_000_000L;
 	}
 
 	/** Make an object name safe to use as a temp-file suffix while preserving its extension. */
