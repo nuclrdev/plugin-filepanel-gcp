@@ -699,7 +699,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		}
 
 		if (ACTION_COPY.equals(actionType)) {
-			new GcsCopyService().copy(other, selectedResources, focusedResource, context);
+			new GcsCopyService().copy(other, selectedResources, focusedResource, context, uuid);
 			return;
 		}
 

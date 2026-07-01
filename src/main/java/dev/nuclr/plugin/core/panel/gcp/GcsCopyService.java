@@ -37,14 +37,15 @@ final class GcsCopyService {
 
     /**
      * Copy the selected (or focused) GCS objects into the folder currently open in {@code other}.
-     * Shows a modal, cancellable progress dialog and blocks until the copy finishes or is cancelled,
-     * then refreshes the destination panel.
+     * Shows the F5 "Copy" setup dialog, then a modal, cancellable progress dialog, blocking until
+     * the copy finishes or is cancelled. Each object's mark in the source panel ({@code sourceUuid})
+     * is cleared the moment it is copied; the destination panel is refreshed at the end.
      */
     void copy(BaseNuclrPlugin other, List<NuclrResource> selectedResources, NuclrResource focusedResource,
-            NuclrPluginContext context) {
+            NuclrPluginContext context, String sourceUuid) {
 
-        Path destination = destinationDir(other);
-        if (destination == null) {
+        Path defaultDestination = destinationDir(other);
+        if (defaultDestination == null) {
             showError("Copy is only supported to a local folder.");
             return;
         }
@@ -55,8 +56,19 @@ final class GcsCopyService {
             return;
         }
 
+        GcsCopyDialog.Options options = GcsCopyDialog.show(header(objects), defaultDestination);
+        if (options == null) {
+            return; // cancelled at the setup dialog
+        }
+        Path destination = options.destination();
+        if (!Files.isDirectory(destination)) {
+            showError("The destination is not a folder:\n" + destination);
+            return;
+        }
+
         var failures = new ArrayList<String>();
-        GcsCopyProgressDialog.run(callback -> run(objects, destination, callback, failures));
+        GcsCopyProgressDialog.run(callback ->
+                run(objects, destination, options.existing(), callback, failures, context, sourceUuid));
 
         refreshDestination(other, context);
         if (!failures.isEmpty()) {
@@ -64,7 +76,8 @@ final class GcsCopyService {
         }
     }
 
-    private void run(List<NuclrResource> objects, Path destination, NuclrPluginCallback cb, List<String> failures) {
+    private void run(List<NuclrResource> objects, Path destination, Action existingMode, NuclrPluginCallback cb,
+            List<String> failures, NuclrPluginContext context, String sourceUuid) {
 
         var conflictDialog = new GcsCopyConflictDialog();
         int copied = 0;
@@ -80,9 +93,15 @@ final class GcsCopyService {
             boolean append = false;
 
             if (Files.exists(target)) {
-                Resolution resolution = conflictDialog.resolve(
-                        metaText(object, "Size"), metaText(object, "Updated"), target);
-                Action action = resolution.action();
+                // "Ask" (null mode) prompts per clash; any other mode was pre-chosen in the setup dialog.
+                Action action = existingMode;
+                Path renameTarget = null;
+                if (action == null) {
+                    Resolution resolution = conflictDialog.resolve(
+                            metaText(object, "Size"), metaText(object, "Updated"), target);
+                    action = resolution.action();
+                    renameTarget = resolution.renameTarget();
+                }
                 if (action == Action.CANCEL) {
                     log.info("GCS copy cancelled by user after {} file(s)", copied);
                     break;
@@ -91,10 +110,8 @@ final class GcsCopyService {
                     continue;
                 }
                 if (action == Action.RENAME) {
-                    target = resolution.renameTarget() != null
-                            ? resolution.renameTarget()
-                            : GcsCopyConflictDialog.autoRename(target);
-                    // A remembered auto-rename can still collide on a later file; resolve it now.
+                    target = renameTarget != null ? renameTarget : GcsCopyConflictDialog.autoRename(target);
+                    // A remembered / pre-chosen auto-rename can still collide on a later file.
                     if (Files.exists(target)) {
                         target = GcsCopyConflictDialog.autoRename(target);
                     }
@@ -103,7 +120,10 @@ final class GcsCopyService {
             }
 
             switch (downloadInto(object, target, append, cb)) {
-                case OK -> copied++;
+                case OK -> {
+                    copied++;
+                    unmark(context, sourceUuid, object); // deselect this file now that it is copied
+                }
                 case CANCELLED -> {
                     log.info("GCS copy cancelled by user after {} file(s)", copied);
                     return;
@@ -197,6 +217,20 @@ final class GcsCopyService {
         if (other != null && context != null && context.getEventBus() != null) {
             context.getEventBus().emit("refresh.plugin.file.panel", Map.of("plugin.uuid", other.uuid()), null);
         }
+    }
+
+    /** Ask the host to clear this object's mark in the source panel (see Events.FilePanelUnmarkEntry). */
+    private static void unmark(NuclrPluginContext context, String sourceUuid, NuclrResource object) {
+        if (context == null || context.getEventBus() == null || sourceUuid == null || object.getUuid() == null) {
+            return;
+        }
+        context.getEventBus().emit("filepanel.unmark.entry",
+                Map.of("plugin.uuid", sourceUuid, "entry.uuid", object.getUuid()), null);
+    }
+
+    /** Short description of the copy set for the setup dialog: the single name, or "N items". */
+    private static String header(List<NuclrResource> objects) {
+        return objects.size() == 1 ? objects.get(0).getName() : objects.size() + " items";
     }
 
     private static String metaText(NuclrResource resource, String key) {
