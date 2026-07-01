@@ -2,6 +2,8 @@ package dev.nuclr.plugin.core.panel.gcp;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.OpenOption;
 import java.nio.file.Path;
@@ -46,7 +48,7 @@ public final class GcpResource extends NuclrResource {
 	static final String KIND_OBJECT = "object";
 	static final String KIND_LOAD_MORE = "load-more";
 
-	/** Metadata carrying the owning project id (on project, service, and bucket resources). */
+	/** Metadata carrying the owning project id (on project, service, bucket, and object resources). */
 	static final String PROJECT_ID = "nuclr.gcp.projectId";
 
 	/** Metadata key identifying which service a {@link #KIND_SERVICE} resource represents. */
@@ -194,12 +196,13 @@ public final class GcpResource extends NuclrResource {
 	}
 
 	/** A leaf object entry within a bucket listing. {@code key} is the full object key (prefix + name). */
-	static GcpResource object(String bucket, String key, GcsObject object) {
+	static GcpResource object(String projectId, String bucket, String key, GcsObject object) {
 		GcpResource r = new GcpResource();
 		r.setUuid(ROOT_UUID + "object/" + bucket + "/" + key);
 		r.setFullPath("gs://" + bucket + "/" + key);
 		r.setFolder(false);
 		r.getMetadata().put(KIND, KIND_OBJECT);
+		r.getMetadata().put(PROJECT_ID, projectId);
 		r.getMetadata().put(BUCKET, bucket);
 		r.getMetadata().put(OBJECT_KEY, key);
 		r.rename(object.name());
@@ -334,6 +337,43 @@ public final class GcpResource extends NuclrResource {
 	/** The full object key (prefix + name) carried by an object resource, or {@code null}. */
 	static String objectKey(NuclrResource resource) {
 		return metaString(resource, OBJECT_KEY);
+	}
+
+	/**
+	 * The Cloud Console "object details" URL for an object resource, e.g.
+	 * {@code https://console.cloud.google.com/storage/browser/_details/bucket/a/b.jpg;tab=live_object?project=my-proj},
+	 * or {@code null} if the resource is not an object. Opened when the user activates the object.
+	 */
+	static String objectConsoleUrl(NuclrResource resource) {
+		if (!isObject(resource)) {
+			return null;
+		}
+		String bucket = bucketName(resource);
+		String key = objectKey(resource);
+		if (bucket == null || key == null) {
+			return null;
+		}
+		var url = new StringBuilder("https://console.cloud.google.com/storage/browser/_details/")
+				.append(encodePath(bucket)).append('/').append(encodePath(key))
+				.append(";tab=live_object");
+		String projectId = projectId(resource);
+		if (projectId != null && !projectId.isBlank()) {
+			url.append("?project=").append(URLEncoder.encode(projectId, StandardCharsets.UTF_8));
+		}
+		return url.toString();
+	}
+
+	/** URL-encode a slash-separated path, encoding each segment but preserving the {@code /} separators. */
+	private static String encodePath(String path) {
+		String[] segments = path.split("/", -1);
+		var out = new StringBuilder();
+		for (int i = 0; i < segments.length; i++) {
+			if (i > 0) {
+				out.append('/');
+			}
+			out.append(URLEncoder.encode(segments[i], StandardCharsets.UTF_8).replace("+", "%20"));
+		}
+		return out.toString();
 	}
 
 	/** The bucket name carried by a bucket / object-dir / load-more resource, or {@code null}. */

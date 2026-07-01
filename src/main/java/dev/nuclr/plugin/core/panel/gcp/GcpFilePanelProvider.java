@@ -1,6 +1,8 @@
 package dev.nuclr.plugin.core.panel.gcp;
 
+import java.awt.Desktop;
 import java.io.IOException;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -68,6 +70,13 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	 * restarts via {@link GcpDiskCache} rather than expiring on a timer.
 	 */
 	private static final String ACTION_REFRESH_PANEL = "refresh.panel";
+
+	/**
+	 * {@code act} action dispatched by the host when the user activates (opens) an entry. For a
+	 * leaf GCS object this opens the object's Cloud Console page in the default browser rather
+	 * than downloading it (quick view — Ctrl+Q — still downloads for local preview).
+	 */
+	private static final String ACTION_PATH_OPENED = "filepanel.path.opened";
 
 	private final String uuid = UUID.randomUUID().toString();
 	private final GcpProjectRepository repository = new GcpProjectRepository();
@@ -525,7 +534,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	private static NuclrResource objectRow(String projectId, String bucket, String prefix, GcsObject object) {
 		return object.folder()
 				? GcpResource.objectDir(projectId, bucket, prefix + object.name(), object.name())
-				: GcpResource.object(bucket, prefix + object.name(), object);
+				: GcpResource.object(projectId, bucket, prefix + object.name(), object);
 	}
 
 	private NuclrResourceData newObjectData(EntrySink sink) {
@@ -667,6 +676,12 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	@Override
 	public void act(BaseNuclrPlugin other, String actionType, List<NuclrResource> selectedResources,
 			NuclrResource focusedResource, Map<String, Object> data, NuclrPluginCallback callback) {
+
+		if (ACTION_PATH_OPENED.equals(actionType)) {
+			openInConsole(focusedResource);
+			return;
+		}
+
 		if (!ACTION_REFRESH_PANEL.equals(actionType)) {
 			return;
 		}
@@ -688,6 +703,29 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			GcpDiskCache.clearProjects();
 			log.info("GCP project listing invalidated on '{}'", actionType);
 		}
+	}
+
+	/**
+	 * Opens the Cloud Console "object details" page for {@code resource} in the default browser,
+	 * off the EDT. No-op if the resource is not a GCS object or the platform has no browse support.
+	 */
+	private static void openInConsole(NuclrResource resource) {
+		String url = GcpResource.objectConsoleUrl(resource);
+		if (url == null) {
+			return;
+		}
+		Thread.ofVirtual().start(() -> {
+			try {
+				if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+					Desktop.getDesktop().browse(URI.create(url));
+					log.info("Opened GCS object in Cloud Console: {}", url);
+				} else {
+					log.warn("Desktop browse not supported; cannot open {}", url);
+				}
+			} catch (IOException | RuntimeException e) {
+				log.warn("Failed to open {} in browser: {}", url, e.getMessage());
+			}
+		});
 	}
 
 	// -------------------------------------------------------------------------
