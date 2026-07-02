@@ -133,6 +133,24 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	 */
 	private static final String ACTION_FIND = "find";
 
+	/**
+	 * {@code act} action dispatched by the host for the F3 "View Resources" function key on the
+	 * project list. Opens the Cloud Resource Manager in the default browser.
+	 */
+	private static final String ACTION_VIEW_RESOURCES = "gcp.view.resources";
+
+	/** Cloud Resource Manager URL opened by {@value #ACTION_VIEW_RESOURCES}. */
+	private static final String RESOURCE_MANAGER_URL = "https://console.cloud.google.com/cloud-resource-manager";
+
+	/**
+	 * {@code act} action dispatched by the host for the Shift+F4 "Create Project" function key on
+	 * the project list. Opens the Cloud Console project-creation page in the default browser.
+	 */
+	private static final String ACTION_CREATE_PROJECT = "gcp.create.project";
+
+	/** Project-creation URL opened by {@value #ACTION_CREATE_PROJECT}. */
+	private static final String PROJECT_CREATE_URL = "https://console.cloud.google.com/projectcreate";
+
 	private final String uuid = UUID.randomUUID().toString();
 	private final GcpProjectRepository repository = new GcpProjectRepository();
 	private final GcsBucketRepository bucketRepository = new GcsBucketRepository();
@@ -325,6 +343,9 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	 */
 	@Override
 	public List<NuclrMenuResource> menuItems(NuclrResource resource) {
+		if (GcpResource.isRoot(currentResource)) {
+			return List.of(new NuclrMenuResource("View Resources", "F3", ACTION_VIEW_RESOURCES));
+		}
 		if (GcpResource.isBucket(currentResource) || GcpResource.isObjectDir(currentResource)) {
 			return List.of(
 					new NuclrMenuResource("Copy", "F5", ACTION_COPY),
@@ -928,6 +949,11 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			return;
 		}
 
+		if (ACTION_VIEW_RESOURCES.equals(actionType)) {
+			browse(RESOURCE_MANAGER_URL);
+			return;
+		}
+
 		if (ACTION_DELETE.equals(actionType)) {
 			int deleted = new GcsDeleteService().delete(selectedResources, focusedResource);
 			if (deleted > 0) {
@@ -1115,7 +1141,11 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	 * off the EDT. No-op if the resource is not a GCS object or the platform has no browse support.
 	 */
 	private static void openInConsole(NuclrResource resource) {
-		String url = GcpResource.consoleUrl(resource);
+		browse(GcpResource.consoleUrl(resource));
+	}
+
+	/** Open {@code url} in the default browser, off the EDT. No-op if {@code url} is null or browsing is unsupported. */
+	private static void browse(String url) {
 		if (url == null) {
 			return;
 		}
@@ -1123,7 +1153,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			try {
 				if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
 					Desktop.getDesktop().browse(URI.create(url));
-					log.info("Opened GCS object in Cloud Console: {}", url);
+					log.info("Opened in Cloud Console: {}", url);
 				} else {
 					log.warn("Desktop browse not supported; cannot open {}", url);
 				}
