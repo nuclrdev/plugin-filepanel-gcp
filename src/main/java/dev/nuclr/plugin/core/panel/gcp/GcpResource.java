@@ -52,7 +52,12 @@ public final class GcpResource extends NuclrResource {
 	static final String KIND_LOAD_MORE = "load-more";
 	static final String KIND_SEARCH_RESULTS = "search-results";
 	static final String KIND_PUBSUB_CATEGORY = "pubsub-category";
+	static final String KIND_PUBSUB_TOPIC = "pubsub-topic";
+	static final String KIND_PUBSUB_SUBSCRIPTION = "pubsub-subscription";
 	static final String KIND_SECRET = "secret";
+
+	/** Metadata key holding a secret's short id (on secret resources), for the Console URL. */
+	static final String SECRET_NAME = "nuclr.gcp.secret.name";
 
 	/** Metadata key identifying which Pub/Sub category a {@link #KIND_PUBSUB_CATEGORY} node is. */
 	static final String PUBSUB_CATEGORY = "nuclr.gcp.pubsub.category";
@@ -197,7 +202,10 @@ public final class GcpResource extends NuclrResource {
 		return r;
 	}
 
-	/** A Secret Manager secret entry (leaf) shown under a project's Secret Manager service. */
+	/**
+	 * A Secret Manager secret entry (leaf) shown under a project's Secret Manager service. Activating
+	 * it opens the secret's versions page in the Cloud Console (see {@link #secretConsoleUrl}).
+	 */
 	static GcpResource secret(String projectId, GcpSecret secret) {
 		GcpResource r = new GcpResource();
 		r.setUuid(ROOT_UUID + "secret/" + projectId + "/" + secret.name());
@@ -205,6 +213,7 @@ public final class GcpResource extends NuclrResource {
 		r.setFolder(false);
 		r.getMetadata().put(KIND, KIND_SECRET);
 		r.getMetadata().put(PROJECT_ID, projectId);
+		r.getMetadata().put(SECRET_NAME, secret.name());
 		r.rename(secret.name());
 		r.getMetadata().put("Created", secret.created());
 		r.getMetadata().put("Locations", secret.locations());
@@ -219,6 +228,34 @@ public final class GcpResource extends NuclrResource {
 	/** The Subscriptions category under a project's Pub/Sub service. */
 	static GcpResource pubsubSubscriptions(String projectId) {
 		return pubsubCategory(projectId, PUBSUB_SUBSCRIPTIONS, "Subscriptions", "Pub/Sub subscriptions");
+	}
+
+	/** A Pub/Sub topic entry (leaf) shown under the Topics category. */
+	static GcpResource pubsubTopic(String projectId, GcpPubsubTopic topic) {
+		GcpResource r = new GcpResource();
+		r.setUuid(ROOT_UUID + "project/" + projectId + "/pubsub/topics/" + topic.name());
+		r.setFullPath(r.getUuid());
+		r.setFolder(false);
+		r.getMetadata().put(KIND, KIND_PUBSUB_TOPIC);
+		r.getMetadata().put(PROJECT_ID, projectId);
+		r.rename(topic.name());
+		r.getMetadata().put("Retention", topic.retention());
+		return r;
+	}
+
+	/** A Pub/Sub subscription entry (leaf) shown under the Subscriptions category. */
+	static GcpResource pubsubSubscription(String projectId, GcpPubsubSubscription subscription) {
+		GcpResource r = new GcpResource();
+		r.setUuid(ROOT_UUID + "project/" + projectId + "/pubsub/subscriptions/" + subscription.name());
+		r.setFullPath(r.getUuid());
+		r.setFolder(false);
+		r.getMetadata().put(KIND, KIND_PUBSUB_SUBSCRIPTION);
+		r.getMetadata().put(PROJECT_ID, projectId);
+		r.rename(subscription.name());
+		r.getMetadata().put("Topic", subscription.topic());
+		r.getMetadata().put("Type", subscription.type());
+		r.getMetadata().put("Ack deadline", subscription.ackDeadline());
+		return r;
 	}
 
 	/** A Cloud Storage bucket entry shown under a project's GCS service; navigable into its objects. */
@@ -429,6 +466,15 @@ public final class GcpResource extends NuclrResource {
 		return resource != null && KIND_PUBSUB_CATEGORY.equals(resource.getMetadata().get(KIND));
 	}
 
+	static boolean isSecret(NuclrResource resource) {
+		return resource != null && KIND_SECRET.equals(resource.getMetadata().get(KIND));
+	}
+
+	/** The short secret id carried by a secret / secret-version resource, or {@code null}. */
+	static String secretName(NuclrResource resource) {
+		return metaString(resource, SECRET_NAME);
+	}
+
 	/** The Pub/Sub category ({@link #PUBSUB_TOPICS} / {@link #PUBSUB_SUBSCRIPTIONS}) of a category node. */
 	static String pubsubCategory(NuclrResource resource) {
 		return metaString(resource, PUBSUB_CATEGORY);
@@ -477,6 +523,88 @@ public final class GcpResource extends NuclrResource {
 			url.append("?project=").append(URLEncoder.encode(projectId, StandardCharsets.UTF_8));
 		}
 		return url.toString();
+	}
+
+	/**
+	 * The Cloud Console "secret versions" URL for a secret resource, e.g.
+	 * {@code https://console.cloud.google.com/security/secret-manager/secret/my-secret/versions?project=my-proj},
+	 * or {@code null} if the resource is not a secret. Opened when the user activates the secret.
+	 */
+	static String secretConsoleUrl(NuclrResource resource) {
+		if (!isSecret(resource)) {
+			return null;
+		}
+		String name = secretName(resource);
+		if (name == null || name.isBlank()) {
+			return null;
+		}
+		var url = new StringBuilder("https://console.cloud.google.com/security/secret-manager/secret/")
+				.append(encodePath(name)).append("/versions");
+		String projectId = projectId(resource);
+		if (projectId != null && !projectId.isBlank()) {
+			url.append("?project=").append(URLEncoder.encode(projectId, StandardCharsets.UTF_8));
+		}
+		return url.toString();
+	}
+
+	/**
+	 * The Cloud Console "subscription details" URL for a Pub/Sub subscription resource, e.g.
+	 * {@code https://console.cloud.google.com/cloudpubsub/subscription/detail/my-sub?project=my-proj&tab=overview},
+	 * or {@code null} if the resource is not a subscription. Opened when the user activates it.
+	 */
+	static String subscriptionConsoleUrl(NuclrResource resource) {
+		if (resource == null || !KIND_PUBSUB_SUBSCRIPTION.equals(resource.getMetadata().get(KIND))) {
+			return null;
+		}
+		String name = resource.getName();
+		if (name == null || name.isBlank()) {
+			return null;
+		}
+		var url = new StringBuilder("https://console.cloud.google.com/cloudpubsub/subscription/detail/")
+				.append(encodePath(name)).append('?');
+		String projectId = projectId(resource);
+		if (projectId != null && !projectId.isBlank()) {
+			url.append("project=").append(URLEncoder.encode(projectId, StandardCharsets.UTF_8)).append('&');
+		}
+		url.append("tab=overview");
+		return url.toString();
+	}
+
+	/**
+	 * The Cloud Console "topic details" URL for a Pub/Sub topic resource, e.g.
+	 * {@code https://console.cloud.google.com/cloudpubsub/topic/detail/my-topic?project=my-proj},
+	 * or {@code null} if the resource is not a topic. Opened when the user activates it.
+	 */
+	static String topicConsoleUrl(NuclrResource resource) {
+		if (resource == null || !KIND_PUBSUB_TOPIC.equals(resource.getMetadata().get(KIND))) {
+			return null;
+		}
+		String name = resource.getName();
+		if (name == null || name.isBlank()) {
+			return null;
+		}
+		var url = new StringBuilder("https://console.cloud.google.com/cloudpubsub/topic/detail/")
+				.append(encodePath(name));
+		String projectId = projectId(resource);
+		if (projectId != null && !projectId.isBlank()) {
+			url.append("?project=").append(URLEncoder.encode(projectId, StandardCharsets.UTF_8));
+		}
+		return url.toString();
+	}
+
+	/** The Cloud Console URL for whichever activatable resource this is (object, secret, topic, subscription), or {@code null}. */
+	static String consoleUrl(NuclrResource resource) {
+		String url = objectConsoleUrl(resource);
+		if (url == null) {
+			url = secretConsoleUrl(resource);
+		}
+		if (url == null) {
+			url = topicConsoleUrl(resource);
+		}
+		if (url == null) {
+			url = subscriptionConsoleUrl(resource);
+		}
+		return url;
 	}
 
 	/** URL-encode a slash-separated path, encoding each segment but preserving the {@code /} separators. */

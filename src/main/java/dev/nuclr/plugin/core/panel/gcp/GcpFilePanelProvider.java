@@ -63,6 +63,12 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	/** Columns shown for the service listing under a project (GCS, Pub/Sub). */
 	private static final List<String> SERVICE_COLUMNS = List.of("Name", "Description");
 
+	/** Columns shown for the Pub/Sub topic listing. */
+	private static final List<String> TOPIC_COLUMNS = List.of("Name", "Retention");
+
+	/** Columns shown for the Pub/Sub subscription listing. */
+	private static final List<String> SUBSCRIPTION_COLUMNS = List.of("Name", "Topic", "Type", "Ack deadline");
+
 	/** Columns shown for the Cloud Storage bucket listing under a project's GCS service. */
 	private static final List<String> BUCKET_COLUMNS = List.of(
 			"Name", "Created", "Location type", "Location",
@@ -127,6 +133,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	private final GcpProjectRepository repository = new GcpProjectRepository();
 	private final GcsBucketRepository bucketRepository = new GcsBucketRepository();
 	private final GcpSecretRepository secretRepository = new GcpSecretRepository();
+	private final GcpPubsubRepository pubsubRepository = new GcpPubsubRepository();
 
 	private NuclrPluginContext context;
 	private boolean focused;
@@ -390,12 +397,13 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		}
 
 		if (GcpResource.isPubsubCategory(resourceToOpen)) {
-			// Topics / Subscriptions are not browsable yet; show only the ".." back to Pub/Sub.
 			String projectId = GcpResource.projectId(resourceToOpen);
-			this.currentResource = GcpResource.PUBSUB_SUBSCRIPTIONS.equals(GcpResource.pubsubCategory(resourceToOpen))
-					? GcpResource.pubsubSubscriptions(projectId)
-					: GcpResource.pubsubTopics(projectId);
-			return pubsubCategoryStub(projectId, sink);
+			if (GcpResource.PUBSUB_SUBSCRIPTIONS.equals(GcpResource.pubsubCategory(resourceToOpen))) {
+				this.currentResource = GcpResource.pubsubSubscriptions(projectId);
+				return listSubscriptions(projectId, cancelled, sink);
+			}
+			this.currentResource = GcpResource.pubsubTopics(projectId);
+			return listTopics(projectId, cancelled, sink);
 		}
 
 		// Entering a bucket (prefix "") or a sub-folder: list its immediate objects/folders.
@@ -522,16 +530,63 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		return data;
 	}
 
-	/** A not-yet-browsable Pub/Sub category shows only the synthetic ".." back to Pub/Sub. */
-	private NuclrResourceData pubsubCategoryStub(String projectId, EntrySink sink) {
+	/** The Topics category lists the project's Pub/Sub topics ({@code ..} then each topic). */
+	private NuclrResourceData listTopics(String projectId, AtomicBoolean cancelled, EntrySink sink) {
 
 		var data = new NuclrResourceData();
-		data.setColumnNames(SERVICE_COLUMNS);
+		data.setColumnNames(TOPIC_COLUMNS);
 		if (sink != null) {
-			sink.columns(SERVICE_COLUMNS);
+			sink.columns(TOPIC_COLUMNS);
 		}
 
-		add(data, sink, GcpResource.parentToPubsub(projectId));
+		add(data, sink, GcpResource.parentToPubsub(projectId)); // ".." back to Pub/Sub
+
+		GcpPubsubRepository.TopicResult result = pubsubRepository.listTopics(projectId);
+		switch (result) {
+			case GcpPubsubRepository.TopicResult.Ok ok -> {
+				for (GcpPubsubTopic topic : ok.topics()) {
+					if (cancelled != null && cancelled.get()) {
+						break;
+					}
+					add(data, sink, GcpResource.pubsubTopic(projectId, topic));
+				}
+				log.info("Pub/Sub topic listing for {}: {} topic(s)", projectId, ok.topics().size());
+			}
+			case GcpPubsubRepository.TopicResult.Err err -> {
+				log.warn("Pub/Sub topic list failed for {}: {}", projectId, err.error());
+				GcpErrorDialog.show(err.error());
+			}
+		}
+		return data;
+	}
+
+	/** The Subscriptions category lists the project's Pub/Sub subscriptions ({@code ..} then each). */
+	private NuclrResourceData listSubscriptions(String projectId, AtomicBoolean cancelled, EntrySink sink) {
+
+		var data = new NuclrResourceData();
+		data.setColumnNames(SUBSCRIPTION_COLUMNS);
+		if (sink != null) {
+			sink.columns(SUBSCRIPTION_COLUMNS);
+		}
+
+		add(data, sink, GcpResource.parentToPubsub(projectId)); // ".." back to Pub/Sub
+
+		GcpPubsubRepository.SubscriptionResult result = pubsubRepository.listSubscriptions(projectId);
+		switch (result) {
+			case GcpPubsubRepository.SubscriptionResult.Ok ok -> {
+				for (GcpPubsubSubscription subscription : ok.subscriptions()) {
+					if (cancelled != null && cancelled.get()) {
+						break;
+					}
+					add(data, sink, GcpResource.pubsubSubscription(projectId, subscription));
+				}
+				log.info("Pub/Sub subscription listing for {}: {} subscription(s)", projectId, ok.subscriptions().size());
+			}
+			case GcpPubsubRepository.SubscriptionResult.Err err -> {
+				log.warn("Pub/Sub subscription list failed for {}: {}", projectId, err.error());
+				GcpErrorDialog.show(err.error());
+			}
+		}
 		return data;
 	}
 
@@ -1046,7 +1101,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	 * off the EDT. No-op if the resource is not a GCS object or the platform has no browse support.
 	 */
 	private static void openInConsole(NuclrResource resource) {
-		String url = GcpResource.objectConsoleUrl(resource);
+		String url = GcpResource.consoleUrl(resource);
 		if (url == null) {
 			return;
 		}
