@@ -314,18 +314,28 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	}
 
 	/**
-	 * Bottom-bar function keys for the GCP panel: F5 "Copy" (copies the selected Cloud Storage
-	 * object(s) into the other panel's folder, see {@link GcsCopyService}), F7 "Make Folder" (creates
-	 * a folder in the current bucket, see {@link GcsMakeFolderService}), and F8 "Delete" (removes the
-	 * selected object(s) from their bucket, see {@link GcsDeleteService}).
+	 * Bottom-bar function keys, tailored to the level currently open — the copy / make-folder /
+	 * delete / find actions only make sense on Cloud Storage objects, so they are offered only
+	 * inside a bucket (or a sub-folder). Other levels (projects, services, Pub/Sub topics and
+	 * subscriptions, secrets) contribute no function keys. A search-results panel holds object
+	 * hits, so it offers Copy only.
+	 *
+	 * <p>Keyed off the plugin's {@link #currentResource} (the open listing), not {@code resource}
+	 * (the cursor row), so the bar reflects where you are rather than what is highlighted.
 	 */
 	@Override
 	public List<NuclrMenuResource> menuItems(NuclrResource resource) {
-		return List.of(
-				new NuclrMenuResource("Copy", "F5", ACTION_COPY),
-				new NuclrMenuResource("Make Folder", "F7", ACTION_MAKE_FOLDER),
-				new NuclrMenuResource("Delete", "F8", ACTION_DELETE),
-				new NuclrMenuResource("Find", "Alt+F7", ACTION_FIND));
+		if (GcpResource.isBucket(currentResource) || GcpResource.isObjectDir(currentResource)) {
+			return List.of(
+					new NuclrMenuResource("Copy", "F5", ACTION_COPY),
+					new NuclrMenuResource("Make Folder", "F7", ACTION_MAKE_FOLDER),
+					new NuclrMenuResource("Delete", "F8", ACTION_DELETE),
+					new NuclrMenuResource("Find", "Alt+F7", ACTION_FIND));
+		}
+		if (GcpResource.isSearchResults(currentResource)) {
+			return List.of(new NuclrMenuResource("Copy", "F5", ACTION_COPY));
+		}
+		return List.of();
 	}
 
 	@Override
