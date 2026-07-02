@@ -10,6 +10,8 @@ import java.awt.KeyboardFocusManager;
 import java.awt.Window;
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -150,6 +152,13 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 	/** Project-creation URL opened by {@value #ACTION_CREATE_PROJECT}. */
 	private static final String PROJECT_CREATE_URL = "https://console.cloud.google.com/projectcreate";
+
+	/**
+	 * {@code act} action dispatched by the host for the Shift+F4 "Create bucket" function key on the
+	 * bucket list. Opens the Cloud Console bucket-creation page (scoped to the current project) in
+	 * the default browser.
+	 */
+	private static final String ACTION_CREATE_BUCKET = "gcp.create.bucket";
 
 	private final String uuid = UUID.randomUUID().toString();
 	private final GcpProjectRepository repository = new GcpProjectRepository();
@@ -347,6 +356,10 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			return List.of(
 					new NuclrMenuResource("View Resources", "F3", ACTION_VIEW_RESOURCES),
 					new NuclrMenuResource("Create Project", "Shift+F4", ACTION_CREATE_PROJECT));
+		}
+		if (GcpResource.isService(currentResource)
+				&& GcpResource.SERVICE_GCS.equals(GcpResource.serviceType(currentResource))) {
+			return List.of(new NuclrMenuResource("Create bucket", "Shift+F4", ACTION_CREATE_BUCKET));
 		}
 		if (GcpResource.isBucket(currentResource) || GcpResource.isObjectDir(currentResource)) {
 			return List.of(
@@ -958,6 +971,16 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 		if (ACTION_CREATE_PROJECT.equals(actionType)) {
 			browse(PROJECT_CREATE_URL);
+			return;
+		}
+
+		if (ACTION_CREATE_BUCKET.equals(actionType)) {
+			String projectId = GcpResource.projectId(currentResource);
+			String url = "https://console.cloud.google.com/storage/create-bucket";
+			if (projectId != null && !projectId.isBlank()) {
+				url += "?project=" + URLEncoder.encode(projectId, StandardCharsets.UTF_8);
+			}
+			browse(url);
 			return;
 		}
 
