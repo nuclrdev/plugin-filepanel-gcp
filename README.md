@@ -1,71 +1,102 @@
-# ☁️ Google Cloud File Panel
+# Google Cloud File Panel
 
-An official [Nuclr Commander](https://nuclr.dev) plugin that adds a **Google Cloud** root to the file panel. On load it syncs your GCP project list in the background via the `gcloud` CLI and materialises each project as a real directory, so the local file panel can navigate your cloud environment without any special GCP awareness.
+An official [Nuclr Commander](https://nuclr.dev) plugin that adds a `GCP`
+drive entry to the file panel. It uses the local `gcloud` CLI to show Google
+Cloud projects and selected project resources as virtual panel entries.
 
-## ✨ What it does
+The plugin does not store credentials. Authentication and authorization are
+delegated to the active `gcloud` account.
+
+## What It Does
 
 | Feature | Details |
 |---|---|
-| 🔄 Background sync | Fetches the project list on load and refreshes every 5 minutes |
-| 📁 Virtual filesystem | Materialises GCP projects as directories under `$TMPDIR/nuclr/gcp-filepanel-v1/Google Cloud/` |
-| 📄 Project info | Writes a `project-info.txt` per project with ID, name, project number, lifecycle, and fetch timestamp |
-| 📋 Project list panel | Shows a scrollable list of all visible projects |
-| 🔐 Authentication | Delegates entirely to `gcloud auth login` — no credentials are stored by the plugin |
-| ⚠️ Error handling | Shows a dialog when `gcloud` is unavailable or returns an error; creates an explanatory file when no projects are accessible |
+| Project browser | Lists projects visible to the current `gcloud` account |
+| Service browser | Shows Cloud Storage, Pub/Sub, and Secret Manager under each project |
+| Cloud Storage | Lists buckets, folders, and objects with paged loading for large prefixes |
+| GCS copy | Copies GCS objects to a local folder and accepts incoming file copies as uploads |
+| GCS actions | Supports make folder, delete, find by name, quick view, and Console object pages |
+| Pub/Sub | Lists topics and subscriptions and opens their Console detail pages |
+| Secret Manager | Lists secrets and opens their Console versions pages |
+| Console shortcuts | Opens Console pages for resource manager and create project/bucket/secret/topic |
+| Disk cache | Persists project, bucket, and complete object listings under the temp directory |
 
-## ✅ Prerequisites
+## Prerequisites
 
-The `gcloud` CLI must be installed and authenticated before launching Nuclr Commander:
+Install and authenticate the Google Cloud CLI before launching Nuclr Commander:
 
 ```bash
 gcloud auth login
 ```
 
-## 📁 Virtual filesystem layout
+The active account must have permission to list the resources you want to
+browse.
+
+## Navigation
 
 ```text
-$TMPDIR/nuclr/gcp-filepanel-v1/Google Cloud/
-  project-alpha/
-    project-info.txt
-  project-beta/
-    project-info.txt
+GCP
+  <project-id>
+    GCS
+      <bucket>
+        <folder-or-object>
+    Pub/Sub
+      Topics
+      Subscriptions
+    Secret Manager
+      <secret>
 ```
 
-## 📥 Installation
+Common function keys are exposed only where they apply. For example, GCS object
+folders expose copy, make-folder, delete, and find actions, while Pub/Sub topics
+expose create-topic.
 
-Copy the signed plugin archive and detached signature into the Nuclr Commander `plugins/` directory:
+## Caching
+
+Listings are served from memory first, then from a restart-persistent disk cache
+under:
 
 ```text
-filepanel-gcp-<version>.zip
-filepanel-gcp-<version>.zip.sig
+<java.io.tmpdir>/nuclr-gcp-cache/
 ```
 
-Nuclr Commander verifies the RSA-SHA256 signature against `nuclr-cert.pem` on load. The plugin becomes available immediately without a restart.
+The cache does not expire on a timer. Use the panel refresh action to invalidate
+the currently open listing and re-query `gcloud`.
 
-## ⚙️ How it works
+## Build
 
-`GcpFilePanelProvider` implements `ResourceContentPlugin` and starts a background virtual-thread refresh on `load()`. `GcloudCli` runs `gcloud projects list --format=json` and captures stdout. `GcpProjectParser` parses the JSON array into `GcpProject` records. The refresh clears and rebuilds the temp directory tree on each run. A debounce guard (`lastRefreshEpochMs`) prevents redundant refreshes within the 5-minute window.
+```bash
+mvn -q test
+mvn -q package -DskipTests
+```
 
-## 🗂️ Source layout
+`package` creates the plugin ZIP in `target/`. The `verify` phase also creates a
+detached ZIP signature and requires the configured signing keystore and
+`jarsigner.storepass` property.
+
+## Source Layout
 
 ```text
 src/main/java/dev/nuclr/plugin/core/panel/gcp/
-├── GcpFilePanelProvider.java     plugin entry point, sync orchestration, project list panel
-├── GcloudCli.java                gcloud CLI runner
-├── GcpError.java                 error types (sealed hierarchy)
-├── GcpErrorDialog.java           error display dialog
-├── GcpProject.java               project data record
-├── GcpProjectParser.java         JSON parsing of gcloud output
-└── GcpProjectRepository.java     project data access and caching
+  GcpFilePanelProvider.java       plugin entry point and panel orchestration
+  GcpResource.java                virtual GCP resource model and Console URLs
+  GcloudCli.java                  gcloud executable and command helpers
+  GcpDiskCache.java               restart-persistent listing cache
+  GcpError*.java                  error classification and dialogs
+  gcs/                            Cloud Storage listing, copy, upload, delete, find
+  pubsub/                         Pub/Sub topic/subscription listing
+  secret/                         Secret Manager listing
 ```
 
-## 📚 Dependencies
+## Dependencies
 
 | Library | Version | Purpose |
 |---|---|---|
-| `dev.nuclr:platform-sdk` | `2.0.1` | Nuclr platform interfaces |
-| `jackson-databind` | `2.21.1` | JSON parsing of gcloud output |
+| `dev.nuclr:platform-sdk` | `3.0.2` | Nuclr platform interfaces |
+| `org.projectlombok:lombok` | `1.18.42` | Generated logging boilerplate |
+| `org.slf4j:slf4j-api` | `2.0.17` | Logging API |
+| `com.fasterxml.jackson.core:jackson-databind` | `2.21.1` | JSON parsing of `gcloud` output |
 
-## 📜 License
+## License
 
-Apache License 2.0 — see [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE).
