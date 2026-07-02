@@ -1,6 +1,9 @@
 package dev.nuclr.plugin.core.panel.gcp;
 
 import java.awt.Desktop;
+import java.awt.Frame;
+import java.awt.KeyboardFocusManager;
+import java.awt.Window;
 import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
@@ -110,6 +113,12 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	 * {@link GcsMakeFolderService}). Only meaningful inside a bucket.
 	 */
 	private static final String ACTION_MAKE_FOLDER = "filepanel.makeFolder";
+
+	/**
+	 * {@code act} action dispatched by the host for the Alt+F7 "Find" function key. Opens the
+	 * find-by-name dialog scoped to the current bucket/folder (see {@link GcsFindDialog}).
+	 */
+	private static final String ACTION_FIND = "find";
 
 	private final String uuid = UUID.randomUUID().toString();
 	private final GcpProjectRepository repository = new GcpProjectRepository();
@@ -300,7 +309,8 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		return List.of(
 				new NuclrMenuResource("Copy", "F5", ACTION_COPY),
 				new NuclrMenuResource("Make Folder", "F7", ACTION_MAKE_FOLDER),
-				new NuclrMenuResource("Delete", "F8", ACTION_DELETE));
+				new NuclrMenuResource("Delete", "F8", ACTION_DELETE),
+				new NuclrMenuResource("Find", "Alt+F7", ACTION_FIND));
 	}
 
 	@Override
@@ -331,6 +341,11 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		// release its held gcloud process before opening something else.
 		if (!GcpResource.isLoadMore(resourceToOpen)) {
 			closePager();
+		}
+
+		if (GcpResource.isSearchResults(resourceToOpen)) {
+			this.currentResource = resourceToOpen;
+			return listSearchResults(resourceToOpen, cancelled, sink);
 		}
 
 		if (GcpResource.isRoot(resourceToOpen)) {
@@ -745,6 +760,11 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			return;
 		}
 
+		if (ACTION_FIND.equals(actionType)) {
+			openFindDialog();
+			return;
+		}
+
 		if (ACTION_DELETE.equals(actionType)) {
 			int deleted = new GcsDeleteService().delete(selectedResources, focusedResource);
 			if (deleted > 0) {
@@ -840,6 +860,93 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		return byName;
 	}
 
+	// -------------------------------------------------------------------------
+	// Find (Alt+F7): name-only search under the current bucket/folder
+	// -------------------------------------------------------------------------
+
+	/** Open the find dialog scoped to the current bucket/folder and, on submit, run the search. */
+	private void openFindDialog() {
+		if (!GcpResource.isBucket(currentResource) && !GcpResource.isObjectDir(currentResource)) {
+			SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(null,
+					"Open a bucket to search for files.", "Find files", JOptionPane.INFORMATION_MESSAGE));
+			return;
+		}
+		NuclrResource origin = currentResource;
+		GcsFindRequest request = GcsFindDialog.show(
+				GcpResource.projectId(origin), GcpResource.bucketName(origin), GcpResource.objectPrefix(origin));
+		if (request == null) {
+			return; // cancelled
+		}
+
+		GcsFindResultsWindow results = new GcsFindResultsWindow(mainWindow(), request,
+				this::navigateToResult,
+				hits -> openResultsInTempPanel(hits, request, origin));
+		GcsFindService.SearchHandle handle = new GcsFindService().search(request, results);
+		results.bind(handle);
+		results.setVisible(true);
+	}
+
+	/** Navigate the panel to a search hit: open its folder and put the cursor on it. */
+	private void navigateToResult(NuclrResource resource) {
+		if (context == null || context.getEventBus() == null) {
+			return;
+		}
+		var payload = new HashMap<String, Object>();
+		if (GcpResource.isObject(resource)) {
+			String key = GcpResource.objectKey(resource);
+			String parent = key == null ? "" : GcpResource.parentPrefix(key);
+			payload.put("resource", GcpResource.objectDir(
+					GcpResource.projectId(resource), GcpResource.bucketName(resource), parent, ""));
+			payload.put("selectChild", resource);
+		} else if (GcpResource.isObjectDir(resource)) {
+			payload.put("resource", resource);
+		} else {
+			return;
+		}
+		context.getEventBus().emit(this, ACTION_PATH_OPENED, payload);
+	}
+
+	/** Send the whole result set to a temporary "search results" panel in the focused pane. */
+	private void openResultsInTempPanel(List<NuclrResource> hits, GcsFindRequest request, NuclrResource origin) {
+		if (context == null || context.getEventBus() == null) {
+			return;
+		}
+		var payload = new HashMap<String, Object>();
+		payload.put("resource", GcpResource.searchResults(hits, request.title(), origin));
+		context.getEventBus().emit(this, ACTION_PATH_OPENED, payload);
+	}
+
+	/** List a "search results" temp panel: a synthetic ".." back to the origin, then the hits. */
+	private NuclrResourceData listSearchResults(NuclrResource root, AtomicBoolean cancelled, EntrySink sink) {
+		var data = newObjectData(sink);
+
+		NuclrResource origin = GcpResource.searchOrigin(root);
+		if (GcpResource.isBucket(origin) || GcpResource.isObjectDir(origin)) {
+			add(data, sink, GcpResource.objectDir(GcpResource.projectId(origin),
+					GcpResource.bucketName(origin), GcpResource.objectPrefix(origin), ".."));
+		}
+
+		for (NuclrResource hit : GcpResource.searchHits(root)) {
+			if (cancelled != null && cancelled.get()) {
+				break;
+			}
+			// Show the full gs:// path in the Name column so results across folders are unambiguous.
+			hit.getMetadata().put("Name", hit.getFullPath() != null ? hit.getFullPath() : hit.getName());
+			add(data, sink, hit);
+		}
+		return data;
+	}
+
+	/** The top-level commander frame, used to anchor Find windows independently of transient dialogs. */
+	private static Window mainWindow() {
+		for (Frame frame : Frame.getFrames()) {
+			if (frame.isShowing()) {
+				return frame;
+			}
+		}
+		return KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow();
+	}
+
 	/**
 	 * Opens the Cloud Console "object details" page for {@code resource} in the default browser,
 	 * off the EDT. No-op if the resource is not a GCS object or the platform has no browse support.
@@ -869,6 +976,9 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 	@Override
 	public String getCurrentLocationDisplayText() {
+		if (GcpResource.isSearchResults(currentResource)) {
+			return "GCP: " + GcpResource.searchTitle(currentResource);
+		}
 		if (GcpResource.isBucket(currentResource) || GcpResource.isObjectDir(currentResource)) {
 			return "GCP: " + GcpResource.projectId(currentResource) + " / GCS / gs://"
 					+ GcpResource.bucketName(currentResource) + "/" + GcpResource.objectPrefix(currentResource);

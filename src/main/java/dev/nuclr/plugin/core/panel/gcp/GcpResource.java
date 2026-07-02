@@ -9,6 +9,9 @@ import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 
 import dev.nuclr.platform.plugin.NuclrResource;
 import lombok.extern.slf4j.Slf4j;
@@ -47,6 +50,12 @@ public final class GcpResource extends NuclrResource {
 	static final String KIND_OBJECT_DIR = "object-dir";
 	static final String KIND_OBJECT = "object";
 	static final String KIND_LOAD_MORE = "load-more";
+	static final String KIND_SEARCH_RESULTS = "search-results";
+
+	/** Metadata on a search-results root: the hit list, the panel title, and the origin folder. */
+	private static final String SEARCH_HITS = "nuclr.gcp.search.hits";
+	private static final String SEARCH_TITLE = "nuclr.gcp.search.title";
+	private static final String SEARCH_ORIGIN = "nuclr.gcp.search.origin";
 
 	/** Metadata carrying the owning project id (on project, service, bucket, and object resources). */
 	static final String PROJECT_ID = "nuclr.gcp.projectId";
@@ -286,6 +295,47 @@ public final class GcpResource extends NuclrResource {
 		r.getMetadata().put("Storage class", "-");
 		r.getMetadata().put("Updated", "-");
 		return r;
+	}
+
+	/**
+	 * A synthetic "search results" root: a virtual folder whose children are the given hits rather
+	 * than a real listing. Navigating to it (via {@code filepanel.path.opened}) makes the GCP panel
+	 * show the results as a temporary panel; leaving via ".." returns to {@code origin}.
+	 */
+	static GcpResource searchResults(List<NuclrResource> hits, String title, NuclrResource origin) {
+		GcpResource r = new GcpResource();
+		String label = title == null || title.isBlank() ? "Search results" : title;
+		r.setUuid(ROOT_UUID + "search/" + UUID.randomUUID());
+		r.setFullPath(r.getUuid());
+		r.setFolder(true);
+		r.getMetadata().put(KIND, KIND_SEARCH_RESULTS);
+		r.getMetadata().put(SEARCH_HITS, new ArrayList<>(hits));
+		r.getMetadata().put(SEARCH_TITLE, label);
+		if (origin != null) {
+			r.getMetadata().put(SEARCH_ORIGIN, origin);
+		}
+		r.rename(label);
+		return r;
+	}
+
+	static boolean isSearchResults(NuclrResource resource) {
+		return resource != null && KIND_SEARCH_RESULTS.equals(resource.getMetadata().get(KIND));
+	}
+
+	@SuppressWarnings("unchecked")
+	static List<NuclrResource> searchHits(NuclrResource resource) {
+		Object value = resource == null ? null : resource.getMetadata().get(SEARCH_HITS);
+		return value instanceof List<?> list ? (List<NuclrResource>) list : List.of();
+	}
+
+	static String searchTitle(NuclrResource resource) {
+		String title = metaString(resource, SEARCH_TITLE);
+		return title == null ? "Search results" : title;
+	}
+
+	static NuclrResource searchOrigin(NuclrResource resource) {
+		Object value = resource == null ? null : resource.getMetadata().get(SEARCH_ORIGIN);
+		return value instanceof NuclrResource r ? r : null;
 	}
 
 	/** Set the name and keep the "Name" display column (read from metadata) in sync. */
