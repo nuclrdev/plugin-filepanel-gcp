@@ -51,6 +51,14 @@ public final class GcpResource extends NuclrResource {
 	static final String KIND_OBJECT = "object";
 	static final String KIND_LOAD_MORE = "load-more";
 	static final String KIND_SEARCH_RESULTS = "search-results";
+	static final String KIND_PUBSUB_CATEGORY = "pubsub-category";
+	static final String KIND_SECRET = "secret";
+
+	/** Metadata key identifying which Pub/Sub category a {@link #KIND_PUBSUB_CATEGORY} node is. */
+	static final String PUBSUB_CATEGORY = "nuclr.gcp.pubsub.category";
+
+	static final String PUBSUB_TOPICS = "topics";
+	static final String PUBSUB_SUBSCRIPTIONS = "subscriptions";
 
 	/** Metadata on a search-results root: the hit list, the panel title, and the origin folder. */
 	private static final String SEARCH_HITS = "nuclr.gcp.search.hits";
@@ -166,6 +174,51 @@ public final class GcpResource extends NuclrResource {
 	/** The Secret Manager service entry under a project. */
 	static GcpResource secretManagerService(String projectId) {
 		return service(projectId, SERVICE_SECRET, "Secret Manager", "Secrets and versions");
+	}
+
+	/** The synthetic ".." entry that navigates from a Pub/Sub category back to the Pub/Sub service. */
+	static GcpResource parentToPubsub(String projectId) {
+		GcpResource r = pubsubService(projectId);
+		r.rename("..");
+		return r;
+	}
+
+	/** A Pub/Sub sub-category node (Topics / Subscriptions) shown under the Pub/Sub service. */
+	private static GcpResource pubsubCategory(String projectId, String category, String displayName, String description) {
+		GcpResource r = new GcpResource();
+		r.setUuid(ROOT_UUID + "project/" + projectId + "/pubsub/" + category);
+		r.setFullPath(r.getUuid());
+		r.setFolder(true);
+		r.getMetadata().put(KIND, KIND_PUBSUB_CATEGORY);
+		r.getMetadata().put(PROJECT_ID, projectId);
+		r.getMetadata().put(PUBSUB_CATEGORY, category);
+		r.rename(displayName);
+		r.getMetadata().put("Description", description);
+		return r;
+	}
+
+	/** A Secret Manager secret entry (leaf) shown under a project's Secret Manager service. */
+	static GcpResource secret(String projectId, GcpSecret secret) {
+		GcpResource r = new GcpResource();
+		r.setUuid(ROOT_UUID + "secret/" + projectId + "/" + secret.name());
+		r.setFullPath(r.getUuid());
+		r.setFolder(false);
+		r.getMetadata().put(KIND, KIND_SECRET);
+		r.getMetadata().put(PROJECT_ID, projectId);
+		r.rename(secret.name());
+		r.getMetadata().put("Created", secret.created());
+		r.getMetadata().put("Locations", secret.locations());
+		return r;
+	}
+
+	/** The Topics category under a project's Pub/Sub service. */
+	static GcpResource pubsubTopics(String projectId) {
+		return pubsubCategory(projectId, PUBSUB_TOPICS, "Topics", "Pub/Sub topics");
+	}
+
+	/** The Subscriptions category under a project's Pub/Sub service. */
+	static GcpResource pubsubSubscriptions(String projectId) {
+		return pubsubCategory(projectId, PUBSUB_SUBSCRIPTIONS, "Subscriptions", "Pub/Sub subscriptions");
 	}
 
 	/** A Cloud Storage bucket entry shown under a project's GCS service; navigable into its objects. */
@@ -370,6 +423,15 @@ public final class GcpResource extends NuclrResource {
 
 	static boolean isService(NuclrResource resource) {
 		return resource != null && KIND_SERVICE.equals(resource.getMetadata().get(KIND));
+	}
+
+	static boolean isPubsubCategory(NuclrResource resource) {
+		return resource != null && KIND_PUBSUB_CATEGORY.equals(resource.getMetadata().get(KIND));
+	}
+
+	/** The Pub/Sub category ({@link #PUBSUB_TOPICS} / {@link #PUBSUB_SUBSCRIPTIONS}) of a category node. */
+	static String pubsubCategory(NuclrResource resource) {
+		return metaString(resource, PUBSUB_CATEGORY);
 	}
 
 	static boolean isBucket(NuclrResource resource) {

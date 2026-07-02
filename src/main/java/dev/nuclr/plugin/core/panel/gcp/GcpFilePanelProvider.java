@@ -71,6 +71,9 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	/** Columns shown for the object listing inside a bucket. */
 	private static final List<String> OBJECT_COLUMNS = List.of("Name", "Size", "Storage class", "Updated");
 
+	/** Columns shown for the secret listing under a project's Secret Manager service. */
+	private static final List<String> SECRET_COLUMNS = List.of("Name", "Created", "Locations");
+
 	/** How many objects to load per page (each "Load more…" fetches one more page). */
 	private static final int OBJECT_PAGE_SIZE = 1000;
 
@@ -123,6 +126,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	private final String uuid = UUID.randomUUID().toString();
 	private final GcpProjectRepository repository = new GcpProjectRepository();
 	private final GcsBucketRepository bucketRepository = new GcsBucketRepository();
+	private final GcpSecretRepository secretRepository = new GcpSecretRepository();
 
 	private NuclrPluginContext context;
 	private boolean focused;
@@ -372,12 +376,26 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 				this.currentResource = GcpResource.gcsService(projectId);
 				return listBuckets(projectId, cancelled, sink);
 			}
-			// Other services (Pub/Sub, Secret Manager) are not browsable yet; show only the "..".
-			// Rebuild the matching clean node so the location bar shows the right service name.
-			this.currentResource = GcpResource.SERVICE_SECRET.equals(serviceType)
-					? GcpResource.secretManagerService(projectId)
-					: GcpResource.pubsubService(projectId);
+			if (GcpResource.SERVICE_PUBSUB.equals(serviceType)) {
+				this.currentResource = GcpResource.pubsubService(projectId);
+				return listPubsub(projectId, sink);
+			}
+			if (GcpResource.SERVICE_SECRET.equals(serviceType)) {
+				this.currentResource = GcpResource.secretManagerService(projectId);
+				return listSecrets(projectId, cancelled, sink);
+			}
+			// Any other (future) service is not browsable yet; show only the "..".
+			this.currentResource = GcpResource.pubsubService(projectId);
 			return serviceStub(projectId, sink);
+		}
+
+		if (GcpResource.isPubsubCategory(resourceToOpen)) {
+			// Topics / Subscriptions are not browsable yet; show only the ".." back to Pub/Sub.
+			String projectId = GcpResource.projectId(resourceToOpen);
+			this.currentResource = GcpResource.PUBSUB_SUBSCRIPTIONS.equals(GcpResource.pubsubCategory(resourceToOpen))
+					? GcpResource.pubsubSubscriptions(projectId)
+					: GcpResource.pubsubTopics(projectId);
+			return pubsubCategoryStub(projectId, sink);
 		}
 
 		// Entering a bucket (prefix "") or a sub-folder: list its immediate objects/folders.
@@ -487,6 +505,77 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 		add(data, sink, GcpResource.parentToProject(projectId));
 		return data;
+	}
+
+	/** The Pub/Sub service lists its two categories: {@code ..}, Topics, Subscriptions. */
+	private NuclrResourceData listPubsub(String projectId, EntrySink sink) {
+
+		var data = new NuclrResourceData();
+		data.setColumnNames(SERVICE_COLUMNS);
+		if (sink != null) {
+			sink.columns(SERVICE_COLUMNS);
+		}
+
+		add(data, sink, GcpResource.parentToProject(projectId)); // ".." back to the service list
+		add(data, sink, GcpResource.pubsubTopics(projectId));
+		add(data, sink, GcpResource.pubsubSubscriptions(projectId));
+		return data;
+	}
+
+	/** A not-yet-browsable Pub/Sub category shows only the synthetic ".." back to Pub/Sub. */
+	private NuclrResourceData pubsubCategoryStub(String projectId, EntrySink sink) {
+
+		var data = new NuclrResourceData();
+		data.setColumnNames(SERVICE_COLUMNS);
+		if (sink != null) {
+			sink.columns(SERVICE_COLUMNS);
+		}
+
+		add(data, sink, GcpResource.parentToPubsub(projectId));
+		return data;
+	}
+
+	/** The Secret Manager service lists the project's secrets ({@code ..} then each secret). */
+	private NuclrResourceData listSecrets(String projectId, AtomicBoolean cancelled, EntrySink sink) {
+
+		var data = new NuclrResourceData();
+		data.setColumnNames(SECRET_COLUMNS);
+		if (sink != null) {
+			sink.columns(SECRET_COLUMNS);
+		}
+
+		add(data, sink, GcpResource.parentToProject(projectId)); // ".." back to the service list
+
+		List<GcpSecret> secrets = secrets(projectId);
+		if (secrets == null) {
+			// Hard error already surfaced via GcpErrorDialog; show just the "..".
+			return data;
+		}
+
+		for (GcpSecret secret : secrets) {
+			if (cancelled != null && cancelled.get()) {
+				break;
+			}
+			add(data, sink, GcpResource.secret(projectId, secret));
+		}
+		log.info("Secret Manager listing for {}: {} secret(s)", projectId, secrets.size());
+		return data;
+	}
+
+	/**
+	 * Return a project's Secret Manager secrets, or {@code null} on a hard error (already surfaced
+	 * via {@link GcpErrorDialog}); "no secrets" is an empty list. Fetched live (not cached).
+	 */
+	private List<GcpSecret> secrets(String projectId) {
+		GcpSecretRepository.Result result = secretRepository.listSecrets(projectId);
+		return switch (result) {
+			case GcpSecretRepository.Result.Ok ok -> ok.secrets();
+			case GcpSecretRepository.Result.Err err -> {
+				log.warn("Secret Manager list failed for {}: {}", projectId, err.error());
+				GcpErrorDialog.show(err.error());
+				yield null;
+			}
+		};
 	}
 
 	// -------------------------------------------------------------------------
@@ -987,6 +1076,9 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		if (GcpResource.isBucket(currentResource) || GcpResource.isObjectDir(currentResource)) {
 			return "GCP: " + GcpResource.projectId(currentResource) + " / GCS / gs://"
 					+ GcpResource.bucketName(currentResource) + "/" + GcpResource.objectPrefix(currentResource);
+		}
+		if (GcpResource.isPubsubCategory(currentResource)) {
+			return "GCP: " + GcpResource.projectId(currentResource) + " / Pub/Sub / " + currentResource.getName();
 		}
 		if (GcpResource.isService(currentResource)) {
 			return "GCP: " + GcpResource.projectId(currentResource) + " / " + currentResource.getName();
