@@ -344,7 +344,9 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	@Override
 	public List<NuclrMenuResource> menuItems(NuclrResource resource) {
 		if (GcpResource.isRoot(currentResource)) {
-			return List.of(new NuclrMenuResource("View Resources", "F3", ACTION_VIEW_RESOURCES));
+			return List.of(
+					new NuclrMenuResource("View Resources", "F3", ACTION_VIEW_RESOURCES),
+					new NuclrMenuResource("Create Project", "Shift+F4", ACTION_CREATE_PROJECT));
 		}
 		if (GcpResource.isBucket(currentResource) || GcpResource.isObjectDir(currentResource)) {
 			return List.of(
@@ -951,6 +953,11 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 		if (ACTION_VIEW_RESOURCES.equals(actionType)) {
 			browse(RESOURCE_MANAGER_URL);
+			return;
+		}
+
+		if (ACTION_CREATE_PROJECT.equals(actionType)) {
+			browse(PROJECT_CREATE_URL);
 			return;
 		}
 
