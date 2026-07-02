@@ -65,6 +65,7 @@ public final class GcpResource extends NuclrResource {
 
 	static final String SERVICE_GCS = "gcs";
 	static final String SERVICE_PUBSUB = "pubsub";
+	static final String SERVICE_SECRET = "secretmanager";
 
 	/** Metadata: bucket name and object-key prefix on bucket / object-dir / load-more resources. */
 	static final String BUCKET = "nuclr.gcp.bucket";
@@ -160,6 +161,11 @@ public final class GcpResource extends NuclrResource {
 	/** The Pub/Sub service entry under a project. */
 	static GcpResource pubsubService(String projectId) {
 		return service(projectId, SERVICE_PUBSUB, "Pub/Sub", "Topics and subscriptions");
+	}
+
+	/** The Secret Manager service entry under a project. */
+	static GcpResource secretManagerService(String projectId) {
+		return service(projectId, SERVICE_SECRET, "Secret Manager", "Secrets and versions");
 	}
 
 	/** A Cloud Storage bucket entry shown under a project's GCS service; navigable into its objects. */

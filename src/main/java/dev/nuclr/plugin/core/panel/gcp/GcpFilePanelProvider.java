@@ -367,12 +367,16 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			// Rebuild a clean service node (the incoming resource may be the ".." back from a
 			// bucket) so the location bar shows the service name rather than "..".
 			String projectId = GcpResource.projectId(resourceToOpen);
-			if (GcpResource.SERVICE_GCS.equals(GcpResource.serviceType(resourceToOpen))) {
+			String serviceType = GcpResource.serviceType(resourceToOpen);
+			if (GcpResource.SERVICE_GCS.equals(serviceType)) {
 				this.currentResource = GcpResource.gcsService(projectId);
 				return listBuckets(projectId, cancelled, sink);
 			}
-			this.currentResource = GcpResource.pubsubService(projectId);
-			// Other services (e.g. Pub/Sub) are not browsable yet; show only the "..".
+			// Other services (Pub/Sub, Secret Manager) are not browsable yet; show only the "..".
+			// Rebuild the matching clean node so the location bar shows the right service name.
+			this.currentResource = GcpResource.SERVICE_SECRET.equals(serviceType)
+					? GcpResource.secretManagerService(projectId)
+					: GcpResource.pubsubService(projectId);
 			return serviceStub(projectId, sink);
 		}
 
@@ -427,7 +431,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		return data;
 	}
 
-	/** A project lists the GCP services it exposes ({@code ..}, GCS, Pub/Sub). */
+	/** A project lists the GCP services it exposes ({@code ..}, GCS, Pub/Sub, Secret Manager). */
 	private NuclrResourceData listServices(String projectId, EntrySink sink) {
 
 		var data = new NuclrResourceData();
@@ -439,6 +443,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		add(data, sink, GcpResource.parent()); // ".." back to the project list
 		add(data, sink, GcpResource.gcsService(projectId));
 		add(data, sink, GcpResource.pubsubService(projectId));
+		add(data, sink, GcpResource.secretManagerService(projectId));
 		return data;
 	}
 
