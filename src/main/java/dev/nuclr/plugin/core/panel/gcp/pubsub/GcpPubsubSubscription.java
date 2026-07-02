@@ -1,4 +1,6 @@
-package dev.nuclr.plugin.core.panel.gcp;
+package dev.nuclr.plugin.core.panel.gcp.pubsub;
+
+import dev.nuclr.plugin.core.panel.gcp.*;
 
 /**
  * A single Pub/Sub subscription, with the fields shown as panel columns. Values are already

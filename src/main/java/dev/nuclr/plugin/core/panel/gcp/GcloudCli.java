@@ -26,7 +26,7 @@ public class GcloudCli {
                     : "gcloud";
 
     /** The OS-appropriate gcloud executable name, for callers that launch gcloud directly. */
-    static String executable() {
+    public static String executable() {
         return GCLOUD;
     }
 

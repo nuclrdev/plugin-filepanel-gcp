@@ -1,4 +1,6 @@
-package dev.nuclr.plugin.core.panel.gcp;
+package dev.nuclr.plugin.core.panel.gcp.gcs;
+
+import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -19,8 +21,8 @@ import dev.nuclr.platform.plugin.BaseNuclrPlugin;
 import dev.nuclr.platform.plugin.NuclrPluginCallback;
 import dev.nuclr.platform.plugin.NuclrPluginContext;
 import dev.nuclr.platform.plugin.NuclrResource;
-import dev.nuclr.plugin.core.panel.gcp.GcsCopyConflictDialog.Action;
-import dev.nuclr.plugin.core.panel.gcp.GcsCopyConflictDialog.Resolution;
+import dev.nuclr.plugin.core.panel.gcp.gcs.GcsCopyConflictDialog.Action;
+import dev.nuclr.plugin.core.panel.gcp.gcs.GcsCopyConflictDialog.Resolution;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -34,7 +36,7 @@ import lombok.extern.slf4j.Slf4j;
  * whole run happens off the EDT; when it finishes the destination panel is asked to refresh.
  */
 @Slf4j
-final class GcsCopyService {
+public final class GcsCopyService {
 
     private final GcsObjectDownloader downloader = new GcsObjectDownloader();
 
@@ -44,7 +46,7 @@ final class GcsCopyService {
      * the copy finishes or is cancelled. Each object's mark in the source panel ({@code sourceUuid})
      * is cleared the moment it is copied; the destination panel is refreshed at the end.
      */
-    void copy(BaseNuclrPlugin other, List<NuclrResource> selectedResources, NuclrResource focusedResource,
+    public void copy(BaseNuclrPlugin other, List<NuclrResource> selectedResources, NuclrResource focusedResource,
             NuclrPluginContext context, String sourceUuid) {
 
         Path defaultDestination = destinationDir(other);
@@ -208,7 +210,7 @@ final class GcsCopyService {
      * @param existingByName display-name → resource for the entries already in this listing (for the
      *                       duplicate check and the conflict dialog's "Existing" row)
      */
-    void acceptCopy(List<NuclrResource> selectedResources, NuclrResource focusedResource,
+    public void acceptCopy(List<NuclrResource> selectedResources, NuclrResource focusedResource,
             NuclrResource currentResource, NuclrPluginContext context, String destUuid,
             Map<String, NuclrResource> existingByName) {
 

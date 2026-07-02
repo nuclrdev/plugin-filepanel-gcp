@@ -1,4 +1,6 @@
-package dev.nuclr.plugin.core.panel.gcp;
+package dev.nuclr.plugin.core.panel.gcp.gcs;
+
+import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.awt.BorderLayout;
 import java.awt.Component;
@@ -40,7 +42,7 @@ import lombok.extern.slf4j.Slf4j;
  * whole result set to a temporary panel via the "Panel" button.
  */
 @Slf4j
-final class GcsFindResultsWindow extends JDialog implements GcsFindService.Listener {
+public final class GcsFindResultsWindow extends JDialog implements GcsFindService.Listener {
 
     private static final long serialVersionUID = 1L;
 
@@ -57,7 +59,7 @@ final class GcsFindResultsWindow extends JDialog implements GcsFindService.Liste
     private transient GcsFindService.SearchHandle handle;
     private volatile boolean finished;
 
-    GcsFindResultsWindow(Window owner, GcsFindRequest request, Consumer<NuclrResource> onActivate,
+    public GcsFindResultsWindow(Window owner, GcsFindRequest request, Consumer<NuclrResource> onActivate,
             Consumer<List<NuclrResource>> onSendToPanel) {
         super(owner, "Find results — " + request.namePattern(), ModalityType.MODELESS);
         this.onActivate = onActivate;
@@ -115,7 +117,7 @@ final class GcsFindResultsWindow extends JDialog implements GcsFindService.Liste
     }
 
     /** Bind the running search so the window can stop it. */
-    void bind(GcsFindService.SearchHandle handle) {
+    public void bind(GcsFindService.SearchHandle handle) {
         this.handle = handle;
     }
 

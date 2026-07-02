@@ -1,4 +1,6 @@
-package dev.nuclr.plugin.core.panel.gcp;
+package dev.nuclr.plugin.core.panel.gcp.gcs;
+
+import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,7 +20,7 @@ import lombok.extern.slf4j.Slf4j;
  * <p>Folders (object prefixes) and the {@code ..} entry are never deleted — only leaf objects.
  */
 @Slf4j
-final class GcsDeleteService {
+public final class GcsDeleteService {
 
     private final GcsObjectDeleter deleter = new GcsObjectDeleter();
 
@@ -26,7 +28,7 @@ final class GcsDeleteService {
      * Confirm and delete the selected (or focused) objects. Blocks until the operation finishes or
      * is cancelled. Returns the number of objects actually deleted (0 if nothing was confirmed).
      */
-    int delete(List<NuclrResource> selectedResources, NuclrResource focusedResource) {
+    public int delete(List<NuclrResource> selectedResources, NuclrResource focusedResource) {
 
         List<NuclrResource> objects = collectObjects(selectedResources, focusedResource);
         if (objects.isEmpty()) {

@@ -1,4 +1,6 @@
-package dev.nuclr.plugin.core.panel.gcp;
+package dev.nuclr.plugin.core.panel.gcp.gcs;
+
+import dev.nuclr.plugin.core.panel.gcp.*;
 
 /**
  * One immediate child of a Cloud Storage path as returned by

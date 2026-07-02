@@ -13,6 +13,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import dev.nuclr.plugin.core.panel.gcp.gcs.*;
+import dev.nuclr.plugin.core.panel.gcp.pubsub.*;
+import dev.nuclr.plugin.core.panel.gcp.secret.*;
 import dev.nuclr.platform.plugin.NuclrResource;
 import lombok.extern.slf4j.Slf4j;
 
@@ -284,7 +287,7 @@ public final class GcpResource extends NuclrResource {
 	 * (ending in {@code /}). Used both for sub-folders and as the ".." / current-location
 	 * reference for an object listing.
 	 */
-	static GcpResource objectDir(String projectId, String bucket, String prefix, String displayName) {
+	public static GcpResource objectDir(String projectId, String bucket, String prefix, String displayName) {
 		GcpResource r = new GcpResource();
 		r.setUuid(ROOT_UUID + "bucket/" + bucket + "/" + prefix);
 		r.setFullPath(ROOT_UUID + "bucket/" + bucket + "/" + prefix);
@@ -301,7 +304,7 @@ public final class GcpResource extends NuclrResource {
 	}
 
 	/** A leaf object entry within a bucket listing. {@code key} is the full object key (prefix + name). */
-	static GcpResource object(String projectId, String bucket, String key, GcsObject object) {
+	public static GcpResource object(String projectId, String bucket, String key, GcsObject object) {
 		GcpResource r = new GcpResource();
 		r.setUuid(ROOT_UUID + "object/" + bucket + "/" + key);
 		r.setFullPath("gs://" + bucket + "/" + key);
@@ -480,11 +483,11 @@ public final class GcpResource extends NuclrResource {
 		return metaString(resource, PUBSUB_CATEGORY);
 	}
 
-	static boolean isBucket(NuclrResource resource) {
+	public static boolean isBucket(NuclrResource resource) {
 		return resource != null && KIND_BUCKET.equals(resource.getMetadata().get(KIND));
 	}
 
-	static boolean isObjectDir(NuclrResource resource) {
+	public static boolean isObjectDir(NuclrResource resource) {
 		return resource != null && KIND_OBJECT_DIR.equals(resource.getMetadata().get(KIND));
 	}
 
@@ -492,12 +495,12 @@ public final class GcpResource extends NuclrResource {
 		return resource != null && KIND_LOAD_MORE.equals(resource.getMetadata().get(KIND));
 	}
 
-	static boolean isObject(NuclrResource resource) {
+	public static boolean isObject(NuclrResource resource) {
 		return resource != null && KIND_OBJECT.equals(resource.getMetadata().get(KIND));
 	}
 
 	/** The full object key (prefix + name) carried by an object resource, or {@code null}. */
-	static String objectKey(NuclrResource resource) {
+	public static String objectKey(NuclrResource resource) {
 		return metaString(resource, OBJECT_KEY);
 	}
 
@@ -621,12 +624,12 @@ public final class GcpResource extends NuclrResource {
 	}
 
 	/** The bucket name carried by a bucket / object-dir / load-more resource, or {@code null}. */
-	static String bucketName(NuclrResource resource) {
+	public static String bucketName(NuclrResource resource) {
 		return metaString(resource, BUCKET);
 	}
 
 	/** The object-key prefix carried by a bucket / object-dir / load-more resource, or {@code ""}. */
-	static String objectPrefix(NuclrResource resource) {
+	public static String objectPrefix(NuclrResource resource) {
 		String prefix = metaString(resource, PREFIX);
 		return prefix == null ? "" : prefix;
 	}

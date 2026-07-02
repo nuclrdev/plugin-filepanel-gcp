@@ -1,4 +1,6 @@
-package dev.nuclr.plugin.core.panel.gcp;
+package dev.nuclr.plugin.core.panel.gcp.gcs;
+
+import dev.nuclr.plugin.core.panel.gcp.*;
 
 /**
  * A single Cloud Storage bucket, with the fields shown as panel columns.

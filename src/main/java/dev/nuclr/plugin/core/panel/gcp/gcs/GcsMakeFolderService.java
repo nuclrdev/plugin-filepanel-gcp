@@ -1,4 +1,6 @@
-package dev.nuclr.plugin.core.panel.gcp;
+package dev.nuclr.plugin.core.panel.gcp.gcs;
+
+import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.util.Set;
 
@@ -14,7 +16,7 @@ import lombok.extern.slf4j.Slf4j;
  * placeholder object (see {@link GcsFolderCreator}).
  */
 @Slf4j
-final class GcsMakeFolderService {
+public final class GcsMakeFolderService {
 
     private static final String DIALOG_TITLE = "Make Folder";
 
@@ -26,7 +28,7 @@ final class GcsMakeFolderService {
      *
      * @return the new folder's display name (its own segment) on success, or {@code null} otherwise
      */
-    String makeFolder(String bucket, String prefix, Set<String> existingNames) {
+    public String makeFolder(String bucket, String prefix, Set<String> existingNames) {
 
         String folderName = promptFolderName();
         if (folderName == null) {

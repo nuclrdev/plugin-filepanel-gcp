@@ -1,4 +1,6 @@
-package dev.nuclr.plugin.core.panel.gcp;
+package dev.nuclr.plugin.core.panel.gcp.gcs;
+
+import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.awt.BorderLayout;
 import java.awt.Component;
@@ -29,7 +31,7 @@ import lombok.extern.slf4j.Slf4j;
  * {@link GcsFindRequest} on Search, or {@code null} on Cancel / ESC.
  */
 @Slf4j
-final class GcsFindDialog {
+public final class GcsFindDialog {
 
     private static final String TITLE = "Find files";
 
@@ -37,7 +39,7 @@ final class GcsFindDialog {
     }
 
     /** Show the dialog for {@code gs://bucket/prefix}; blocks (modal) and returns the request or null. */
-    static GcsFindRequest show(String projectId, String bucket, String prefix) {
+    public static GcsFindRequest show(String projectId, String bucket, String prefix) {
         final GcsFindRequest[] result = new GcsFindRequest[1];
         runOnEdtAndWait(() -> result[0] = build(projectId, bucket, prefix));
         return result[0];

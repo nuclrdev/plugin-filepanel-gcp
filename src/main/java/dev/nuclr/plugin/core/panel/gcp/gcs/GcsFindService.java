@@ -1,4 +1,6 @@
-package dev.nuclr.plugin.core.panel.gcp;
+package dev.nuclr.plugin.core.panel.gcp.gcs;
+
+import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -31,14 +33,14 @@ import lombok.extern.slf4j.Slf4j;
  * <p>Search is by name only; object content is never read.
  */
 @Slf4j
-final class GcsFindService {
+public final class GcsFindService {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final JsonFactory FACTORY = MAPPER.getFactory();
     private static final DateTimeFormatter DISPLAY_TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /** Receives search results; every callback is delivered on the EDT. */
-    interface Listener {
+    public interface Listener {
         void onMatch(NuclrResourceMatch match);
 
         void onProgress(long scanned, long matched);
@@ -47,10 +49,10 @@ final class GcsFindService {
     }
 
     /** Small carrier so the listener needn't know how a hit is built. */
-    record NuclrResourceMatch(NuclrResource resource) {}
+    public record NuclrResourceMatch(NuclrResource resource) {}
 
     /** Handle to a running search: cooperative cancellation that also kills the gcloud process. */
-    static final class SearchHandle {
+    public static final class SearchHandle {
         private final AtomicBoolean cancelled = new AtomicBoolean(false);
         private final AtomicReference<Process> process = new AtomicReference<>();
 
@@ -75,7 +77,7 @@ final class GcsFindService {
     }
 
     /** Begin the search asynchronously; returns immediately with a handle for cancellation. */
-    SearchHandle search(GcsFindRequest request, Listener listener) {
+    public SearchHandle search(GcsFindRequest request, Listener listener) {
         SearchHandle handle = new SearchHandle();
         Thread.ofVirtual().name("gcs-find").start(() -> run(request, listener, handle));
         return handle;

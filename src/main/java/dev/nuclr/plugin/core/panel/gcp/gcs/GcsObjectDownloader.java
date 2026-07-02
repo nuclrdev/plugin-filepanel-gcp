@@ -1,4 +1,6 @@
-package dev.nuclr.plugin.core.panel.gcp;
+package dev.nuclr.plugin.core.panel.gcp.gcs;
+
+import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -28,7 +30,7 @@ import lombok.extern.slf4j.Slf4j;
  * {@link HttpClient} pools connections, so back-to-back downloads reuse a warm TLS session.
  */
 @Slf4j
-final class GcsObjectDownloader {
+public final class GcsObjectDownloader {
 
     /** Typed outcome of {@link #downloadToFile}. */
     public sealed interface Result permits Result.Ok, Result.Err {
@@ -56,7 +58,7 @@ final class GcsObjectDownloader {
      * Downloads {@code gs://bucket/key} into {@code destination}, overwriting it. Convenience form
      * with no progress reporting and no cancellation.
      */
-    Result downloadToFile(String bucket, String key, Path destination) {
+    public Result downloadToFile(String bucket, String key, Path destination) {
         return downloadToFile(bucket, key, destination, null, null);
     }
 
@@ -172,7 +174,7 @@ final class GcsObjectDownloader {
      * Best-effort: open a TLS connection to the bucket's endpoint (and validate the token) so the
      * first real download skips the ~0.4s cold handshake. Failures are ignored.
      */
-    static void warmConnection(String bucket) {
+    public static void warmConnection(String bucket) {
         long startNanos = System.nanoTime();
         try {
             String host = GcsEndpoints.host(bucket);

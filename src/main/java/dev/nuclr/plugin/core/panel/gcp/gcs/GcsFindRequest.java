@@ -1,4 +1,6 @@
-package dev.nuclr.plugin.core.panel.gcp;
+package dev.nuclr.plugin.core.panel.gcp.gcs;
+
+import dev.nuclr.plugin.core.panel.gcp.*;
 
 /**
  * An immutable "Find files" request for the GCP panel: a filename wildcard pattern matched against
@@ -11,7 +13,7 @@ package dev.nuclr.plugin.core.panel.gcp;
  * @param recursive     whether to descend into sub-folders ({@code **}) or search only this level
  * @param caseSensitive whether the name match is case-sensitive
  */
-record GcsFindRequest(
+public record GcsFindRequest(
         String projectId,
         String bucket,
         String prefix,
@@ -24,7 +26,7 @@ record GcsFindRequest(
         return "gs://" + bucket + "/" + prefix + (recursive ? "**" : "*");
     }
 
-    String title() {
+    public String title() {
         String p = namePattern == null || namePattern.isBlank() ? "*" : namePattern;
         return "Find: " + p + " in gs://" + bucket + "/" + prefix;
     }

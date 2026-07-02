@@ -3,7 +3,7 @@ package dev.nuclr.plugin.core.panel.gcp;
 import java.util.Locale;
 
 /** Shared classification of gcloud failures from their stderr text. No Swing, no I/O. */
-final class GcloudErrors {
+public final class GcloudErrors {
 
     private GcloudErrors() {}
 
@@ -22,7 +22,7 @@ final class GcloudErrors {
     }
 
     /** Classifies a non-zero gcloud exit into a {@link GcpError}, truncating noisy stderr. */
-    static GcpError classify(String stderr) {
+    public static GcpError classify(String stderr) {
         String text = stderr == null ? "" : stderr.strip();
         if (isAuthError(text)) {
             return new GcpError.NotAuthenticated();

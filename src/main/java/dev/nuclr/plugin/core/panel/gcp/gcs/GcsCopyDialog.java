@@ -1,4 +1,6 @@
-package dev.nuclr.plugin.core.panel.gcp;
+package dev.nuclr.plugin.core.panel.gcp.gcs;
+
+import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.awt.BorderLayout;
 import java.awt.Component;
@@ -22,7 +24,7 @@ import javax.swing.JTextField;
 import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 
-import dev.nuclr.plugin.core.panel.gcp.GcsCopyConflictDialog.Action;
+import dev.nuclr.plugin.core.panel.gcp.gcs.GcsCopyConflictDialog.Action;
 import lombok.extern.slf4j.Slf4j;
 
 /**

@@ -1,4 +1,6 @@
-package dev.nuclr.plugin.core.panel.gcp;
+package dev.nuclr.plugin.core.panel.gcp.secret;
+
+import dev.nuclr.plugin.core.panel.gcp.*;
 
 /**
  * A single Secret Manager secret, with the fields shown as panel columns. Values are already

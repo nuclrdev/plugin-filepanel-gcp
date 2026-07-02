@@ -1,4 +1,6 @@
-package dev.nuclr.plugin.core.panel.gcp;
+package dev.nuclr.plugin.core.panel.gcp.gcs;
+
+import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -28,18 +30,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * abandoned (navigating elsewhere, cancel, unload). Not thread-safe: the owner must serialize
  * {@link #nextPage} and {@link #close}.
  */
-final class GcsObjectPager implements AutoCloseable {
+public final class GcsObjectPager implements AutoCloseable {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final JsonFactory FACTORY = MAPPER.getFactory();
 
     /** Carries a classified {@link GcpError} when a listing cannot be started. */
-    static final class GcsListException extends Exception {
+    public static final class GcsListException extends Exception {
         private final transient GcpError error;
         GcsListException(GcpError error) {
             this.error = error;
         }
-        GcpError error() {
+        public GcpError error() {
             return error;
         }
     }
@@ -63,7 +65,7 @@ final class GcsObjectPager implements AutoCloseable {
      * @throws GcsListException if gcloud is missing, the account is not authorized, or the
      *                          command fails before producing a listing
      */
-    static GcsObjectPager open(String bucket, String prefix) throws GcsListException {
+    public static GcsObjectPager open(String bucket, String prefix) throws GcsListException {
         String url = "gs://" + bucket + "/" + prefix;
         Process process;
         try {
@@ -118,7 +120,7 @@ final class GcsObjectPager implements AutoCloseable {
      * list once the listing is exhausted (or immediately if cancelled). Names are relative to
      * the listed prefix.
      */
-    List<GcsObject> nextPage(int max, AtomicBoolean cancelled) {
+    public List<GcsObject> nextPage(int max, AtomicBoolean cancelled) {
         var page = new ArrayList<GcsObject>(Math.min(max, 1024));
         if (exhausted || parser == null) {
             return page;
@@ -148,7 +150,7 @@ final class GcsObjectPager implements AutoCloseable {
     }
 
     /** Whether another {@link #nextPage} call might yield more entries. */
-    boolean hasMore() {
+    public boolean hasMore() {
         return !exhausted;
     }
 

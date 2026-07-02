@@ -1,4 +1,6 @@
-package dev.nuclr.plugin.core.panel.gcp;
+package dev.nuclr.plugin.core.panel.gcp.gcs;
+
+import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -16,7 +18,7 @@ import lombok.extern.slf4j.Slf4j;
  * marked {@code deleteOnExit} as a safety net and removed eagerly when the panel plugin unloads.
  */
 @Slf4j
-final class GcsTempFiles {
+public final class GcsTempFiles {
 
     private static final Set<Path> FILES = ConcurrentHashMap.newKeySet();
     private static final Map<String, Path> BY_OBJECT = new ConcurrentHashMap<>();
@@ -24,7 +26,7 @@ final class GcsTempFiles {
     private GcsTempFiles() {}
 
     /** The temp file already downloaded for {@code gsKey}, or {@code null} if not cached/gone. */
-    static Path cached(String gsKey) {
+    public static Path cached(String gsKey) {
         Path file = BY_OBJECT.get(gsKey);
         if (file != null && Files.exists(file)) {
             return file;
@@ -36,14 +38,14 @@ final class GcsTempFiles {
     }
 
     /** Records a materialized temp file under its object key and schedules it for deletion. */
-    static void register(String gsKey, Path file) {
+    public static void register(String gsKey, Path file) {
         FILES.add(file);
         BY_OBJECT.put(gsKey, file);
         file.toFile().deleteOnExit();
     }
 
     /** Deletes every tracked temp file now (best-effort) and clears the registry. */
-    static void cleanup() {
+    public static void cleanup() {
         for (Path file : FILES) {
             try {
                 Files.deleteIfExists(file);

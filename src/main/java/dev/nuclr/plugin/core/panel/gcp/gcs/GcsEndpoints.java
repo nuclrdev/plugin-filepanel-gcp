@@ -1,4 +1,6 @@
-package dev.nuclr.plugin.core.panel.gcp;
+package dev.nuclr.plugin.core.panel.gcp.gcs;
+
+import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.util.Locale;
 import java.util.Map;
@@ -14,7 +16,7 @@ import java.util.regex.Pattern;
  * caller is in the same region. Bucket locations are recorded as the bucket list is fetched
  * (it already carries each bucket's location), so no extra lookup is needed.
  */
-final class GcsEndpoints {
+public final class GcsEndpoints {
 
     static final String GLOBAL_HOST = "storage.googleapis.com";
 
@@ -27,7 +29,7 @@ final class GcsEndpoints {
     private GcsEndpoints() {}
 
     /** Remember a bucket's location (from the bucket listing) for endpoint selection. */
-    static void recordLocation(String bucket, String location) {
+    public static void recordLocation(String bucket, String location) {
         if (bucket == null || location == null || location.isBlank() || "-".equals(location)) {
             return;
         }
@@ -43,7 +45,7 @@ final class GcsEndpoints {
         return GLOBAL_HOST;
     }
 
-    static void clear() {
+    public static void clear() {
         LOCATION.clear();
     }
 }
