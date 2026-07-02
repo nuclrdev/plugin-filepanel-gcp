@@ -160,6 +160,18 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	 */
 	private static final String ACTION_CREATE_BUCKET = "gcp.create.bucket";
 
+	/**
+	 * {@code act} action dispatched by the host for the Shift+F4 "Create secret" function key on the
+	 * secret list. Opens the Cloud Console secret-creation page (scoped to the current project).
+	 */
+	private static final String ACTION_CREATE_SECRET = "gcp.create.secret";
+
+	/**
+	 * {@code act} action dispatched by the host for the Shift+F4 "Create topic" function key on the
+	 * Pub/Sub topics list. Opens the Cloud Console topic-creation page (scoped to the current project).
+	 */
+	private static final String ACTION_CREATE_TOPIC = "gcp.create.topic";
+
 	private final String uuid = UUID.randomUUID().toString();
 	private final GcpProjectRepository repository = new GcpProjectRepository();
 	private final GcsBucketRepository bucketRepository = new GcsBucketRepository();
@@ -357,9 +369,15 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 					new NuclrMenuResource("View Resources", "F3", ACTION_VIEW_RESOURCES),
 					new NuclrMenuResource("Create Project", "Shift+F4", ACTION_CREATE_PROJECT));
 		}
-		if (GcpResource.isService(currentResource)
-				&& GcpResource.SERVICE_GCS.equals(GcpResource.serviceType(currentResource))) {
-			return List.of(new NuclrMenuResource("Create bucket", "Shift+F4", ACTION_CREATE_BUCKET));
+		if (GcpResource.isService(currentResource)) {
+			String serviceType = GcpResource.serviceType(currentResource);
+			if (GcpResource.SERVICE_GCS.equals(serviceType)) {
+				return List.of(new NuclrMenuResource("Create bucket", "Shift+F4", ACTION_CREATE_BUCKET));
+			}
+			if (GcpResource.SERVICE_SECRET.equals(serviceType)) {
+				return List.of(new NuclrMenuResource("Create secret", "Shift+F4", ACTION_CREATE_SECRET));
+			}
+			return List.of();
 		}
 		if (GcpResource.isBucket(currentResource) || GcpResource.isObjectDir(currentResource)) {
 			return List.of(
@@ -367,6 +385,10 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 					new NuclrMenuResource("Make Folder", "F7", ACTION_MAKE_FOLDER),
 					new NuclrMenuResource("Delete", "F8", ACTION_DELETE),
 					new NuclrMenuResource("Find", "Alt+F7", ACTION_FIND));
+		}
+		if (GcpResource.isPubsubCategory(currentResource)
+				&& GcpResource.PUBSUB_TOPICS.equals(GcpResource.pubsubCategory(currentResource))) {
+			return List.of(new NuclrMenuResource("Create topic", "Shift+F4", ACTION_CREATE_TOPIC));
 		}
 		if (GcpResource.isSearchResults(currentResource)) {
 			return List.of(new NuclrMenuResource("Copy", "F5", ACTION_COPY));
@@ -975,12 +997,17 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		}
 
 		if (ACTION_CREATE_BUCKET.equals(actionType)) {
-			String projectId = GcpResource.projectId(currentResource);
-			String url = "https://console.cloud.google.com/storage/create-bucket";
-			if (projectId != null && !projectId.isBlank()) {
-				url += "?project=" + URLEncoder.encode(projectId, StandardCharsets.UTF_8);
-			}
-			browse(url);
+			browse(withProject("https://console.cloud.google.com/storage/create-bucket"));
+			return;
+		}
+
+		if (ACTION_CREATE_SECRET.equals(actionType)) {
+			browse(withProject("https://console.cloud.google.com/security/secret-manager/create"));
+			return;
+		}
+
+		if (ACTION_CREATE_TOPIC.equals(actionType)) {
+			browse(withProject("https://console.cloud.google.com/cloudpubsub/topic/create"));
 			return;
 		}
 
@@ -1172,6 +1199,15 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	 */
 	private static void openInConsole(NuclrResource resource) {
 		browse(GcpResource.consoleUrl(resource));
+	}
+
+	/** Append {@code ?project=<current project id>} to a Console base URL (or leave it bare if unknown). */
+	private String withProject(String baseUrl) {
+		String projectId = GcpResource.projectId(currentResource);
+		if (projectId == null || projectId.isBlank()) {
+			return baseUrl;
+		}
+		return baseUrl + "?project=" + URLEncoder.encode(projectId, StandardCharsets.UTF_8);
 	}
 
 	/** Open {@code url} in the default browser, off the EDT. No-op if {@code url} is null or browsing is unsupported. */
