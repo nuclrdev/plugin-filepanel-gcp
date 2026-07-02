@@ -1,27 +1,27 @@
-# Google Cloud File Panel
+# ☁️ Google Cloud File Panel
 
 An official [Nuclr Commander](https://nuclr.dev) plugin that adds a `GCP`
-drive entry to the file panel. It uses the local `gcloud` CLI to show Google
+drive entry to the file panel. 🚀 It uses the local `gcloud` CLI to show Google
 Cloud projects and selected project resources as virtual panel entries.
 
-The plugin does not store credentials. Authentication and authorization are
+🔒 The plugin does not store credentials. Authentication and authorization are
 delegated to the active `gcloud` account.
 
-## What It Does
+## ✨ What It Does
 
 | Feature | Details |
 |---|---|
-| Project browser | Lists projects visible to the current `gcloud` account |
-| Service browser | Shows Cloud Storage, Pub/Sub, and Secret Manager under each project |
-| Cloud Storage | Lists buckets, folders, and objects with paged loading for large prefixes |
-| GCS copy | Copies GCS objects to a local folder and accepts incoming file copies as uploads |
-| GCS actions | Supports make folder, delete, find by name, quick view, and Console object pages |
-| Pub/Sub | Lists topics and subscriptions and opens their Console detail pages |
-| Secret Manager | Lists secrets and opens their Console versions pages |
-| Console shortcuts | Opens Console pages for resource manager and create project/bucket/secret/topic |
-| Disk cache | Persists project, bucket, and complete object listings under the temp directory |
+| 🗂️ Project browser | Lists projects visible to the current `gcloud` account |
+| 🧩 Service browser | Shows Cloud Storage, Pub/Sub, and Secret Manager under each project |
+| 🪣 Cloud Storage | Lists buckets, folders, and objects with paged loading for large prefixes |
+| 📥 GCS copy | Copies GCS objects to a local folder and accepts incoming file copies as uploads |
+| 🛠️ GCS actions | Supports make folder, delete, find by name, quick view, and Console object pages |
+| 📨 Pub/Sub | Lists topics and subscriptions and opens their Console detail pages |
+| 🔑 Secret Manager | Lists secrets and opens their Console versions pages |
+| 🌐 Console shortcuts | Opens Console pages for resource manager and create project/bucket/secret/topic |
+| 💽 Disk cache | Persists project, bucket, and complete object listings under the temp directory |
 
-## Prerequisites
+## 📋 Prerequisites
 
 Install and authenticate the Google Cloud CLI before launching Nuclr Commander:
 
