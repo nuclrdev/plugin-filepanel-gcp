@@ -467,6 +467,10 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 				this.currentResource = GcpResource.computeEngineService(projectId);
 				return listComputeEngine(projectId, sink);
 			}
+			if (GcpResource.SERVICE_GKE.equals(serviceType)) {
+				this.currentResource = GcpResource.gkeService(projectId);
+				return listGke(projectId, sink);
+			}
 			// Any other (future) service is not browsable yet; show only the "..".
 			this.currentResource = GcpResource.pubsubService(projectId);
 			return serviceStub(projectId, sink);
@@ -579,6 +583,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		add(data, sink, GcpResource.gcsService(projectId));
 		add(data, sink, GcpResource.pubsubService(projectId));
 		add(data, sink, GcpResource.computeEngineService(projectId));
+		add(data, sink, GcpResource.gkeService(projectId));
 		add(data, sink, GcpResource.secretManagerService(projectId));
 		return data;
 	}
@@ -781,6 +786,23 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		add(data, sink, GcpResource.computeLink(projectId, "Preview features", "Preview features", "compute/previewFeatures"));
 		add(data, sink, GcpResource.computeLink(projectId, "Operations", "Compute operations", "compute/operations"));
 		add(data, sink, GcpResource.computeLink(projectId, "Settings", "Compute Engine settings", "compute/settings"));
+		return data;
+	}
+
+	/** The GKE service lists its sections ({@code ..} then each section). */
+	private NuclrResourceData listGke(String projectId, EntrySink sink) {
+
+		var data = new NuclrResourceData();
+		data.setColumnNames(SERVICE_COLUMNS);
+		if (sink != null) {
+			sink.columns(SERVICE_COLUMNS);
+		}
+
+		add(data, sink, GcpResource.parentToProject(projectId)); // ".." back to the service list
+		add(data, sink, GcpResource.gkeCategory(projectId, null, "Resources management", "Clusters and workloads"));
+		add(data, sink, GcpResource.gkeCategory(projectId, null, "Posture management", "Security posture and findings"));
+		add(data, sink, GcpResource.gkeCategory(projectId, null, "Networking", "Gateways, services, and ingress"));
+		add(data, sink, GcpResource.gkeCategory(projectId, null, "Features", "GKE features"));
 		return data;
 	}
 

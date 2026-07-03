@@ -60,6 +60,7 @@ public final class GcpResource extends NuclrResource {
 	static final String KIND_SECRET = "secret";
 	static final String KIND_COMPUTE_CATEGORY = "compute-category";
 	static final String KIND_COMPUTE_LINK = "compute-link";
+	static final String KIND_GKE_CATEGORY = "gke-category";
 
 	/** Metadata key holding a secret's short id (on secret resources), for the Console URL. */
 	static final String SECRET_NAME = "nuclr.gcp.secret.name";
@@ -84,6 +85,9 @@ public final class GcpResource extends NuclrResource {
 	/** Metadata key holding the Cloud Console URL a {@link #KIND_COMPUTE_LINK} entry opens when activated. */
 	static final String COMPUTE_URL = "nuclr.gcp.compute.url";
 
+	/** Metadata key identifying which browsable GKE category a {@link #KIND_GKE_CATEGORY} node is. */
+	static final String GKE_CATEGORY = "nuclr.gcp.gke.category";
+
 	/** Metadata on a search-results root: the hit list, the panel title, and the origin folder. */
 	private static final String SEARCH_HITS = "nuclr.gcp.search.hits";
 	private static final String SEARCH_TITLE = "nuclr.gcp.search.title";
@@ -99,6 +103,7 @@ public final class GcpResource extends NuclrResource {
 	static final String SERVICE_PUBSUB = "pubsub";
 	static final String SERVICE_SECRET = "secretmanager";
 	static final String SERVICE_COMPUTE = "compute";
+	static final String SERVICE_GKE = "gke";
 
 	/** Metadata: bucket name and object-key prefix on bucket / object-dir / load-more resources. */
 	static final String BUCKET = "nuclr.gcp.bucket";
@@ -206,6 +211,11 @@ public final class GcpResource extends NuclrResource {
 		return service(projectId, SERVICE_COMPUTE, "Compute Engine", "Virtual machines and infrastructure");
 	}
 
+	/** The GKE (Google Kubernetes Engine) service entry under a project. */
+	static GcpResource gkeService(String projectId) {
+		return service(projectId, SERVICE_GKE, "GKE", "Google Kubernetes Engine");
+	}
+
 	/**
 	 * A Compute Engine section entry shown under the Compute Engine service — e.g. Virtual Machines,
 	 * Storage, Instance Groups. A non-null {@code category} makes it a browsable folder (its sections
@@ -259,6 +269,26 @@ public final class GcpResource extends NuclrResource {
 	/** The Settings category (browsable) under a project's Compute Engine service. */
 	static GcpResource computeSettings(String projectId) {
 		return computeCategory(projectId, COMPUTE_SETTINGS, "Settings", "Compute Engine settings");
+	}
+
+	/**
+	 * A GKE section entry shown under the GKE service — e.g. Resources management, Networking. A non-null
+	 * {@code category} makes it a browsable folder (its sections are listed on entry); a {@code null}
+	 * category makes it a display-only leaf (not browsable yet).
+	 */
+	static GcpResource gkeCategory(String projectId, String category, String displayName, String description) {
+		GcpResource r = new GcpResource();
+		r.setUuid(ROOT_UUID + "project/" + projectId + "/gke/" + displayName);
+		r.setFullPath(r.getUuid());
+		r.setFolder(category != null);
+		r.getMetadata().put(KIND, KIND_GKE_CATEGORY);
+		r.getMetadata().put(PROJECT_ID, projectId);
+		if (category != null) {
+			r.getMetadata().put(GKE_CATEGORY, category);
+		}
+		r.rename(displayName);
+		r.getMetadata().put("Description", description);
+		return r;
 	}
 
 	/** The synthetic ".." entry that navigates from a Compute Engine category back to the Compute Engine service. */
