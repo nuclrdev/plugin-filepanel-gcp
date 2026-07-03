@@ -499,6 +499,10 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 				this.currentResource = GcpResource.computeExtensionManager(projectId);
 				return listComputeExtensionManager(projectId, sink);
 			}
+			if (GcpResource.COMPUTE_VM_MANAGER.equals(category)) {
+				this.currentResource = GcpResource.computeVmManager(projectId);
+				return listComputeVmManager(projectId, sink);
+			}
 			this.currentResource = GcpResource.computeVirtualMachines(projectId);
 			return listComputeVirtualMachines(projectId, sink);
 		}
@@ -642,7 +646,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		add(data, sink, GcpResource.computeStorage(projectId));
 		add(data, sink, GcpResource.computeInstanceGroups(projectId));
 		add(data, sink, GcpResource.computeExtensionManager(projectId));
-		add(data, sink, GcpResource.computeCategory(projectId, null, "VM Manager", "OS patch, config, and inventory"));
+		add(data, sink, GcpResource.computeVmManager(projectId));
 		add(data, sink, GcpResource.computeCategory(projectId, null, "Bar Metal Solution", "Bare-metal infrastructure"));
 		add(data, sink, GcpResource.computeCategory(projectId, null, "Settings", "Compute Engine settings"));
 		return data;
@@ -714,6 +718,21 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 		add(data, sink, GcpResource.parentToCompute(projectId)); // ".." back to Compute Engine
 		add(data, sink, GcpResource.computeLink(projectId, "Extension policies", "VM extension policies", "compute/extensionManager/policies/global"));
+		return data;
+	}
+
+	/** The VM Manager category lists its sections ({@code ..} then each), each opening a Cloud Console page. */
+	private NuclrResourceData listComputeVmManager(String projectId, EntrySink sink) {
+
+		var data = new NuclrResourceData();
+		data.setColumnNames(SERVICE_COLUMNS);
+		if (sink != null) {
+			sink.columns(SERVICE_COLUMNS);
+		}
+
+		add(data, sink, GcpResource.parentToCompute(projectId)); // ".." back to Compute Engine
+		add(data, sink, GcpResource.computeLink(projectId, "Patch", "OS patch management", "compute/patch"));
+		add(data, sink, GcpResource.computeLink(projectId, "OS policies", "OS configuration policies", "compute/config/projects"));
 		return data;
 	}
 

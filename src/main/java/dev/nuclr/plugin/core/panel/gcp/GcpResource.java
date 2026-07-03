@@ -77,6 +77,8 @@ public final class GcpResource extends NuclrResource {
 	static final String COMPUTE_STORAGE = "storage";
 	static final String COMPUTE_INSTANCE_GROUPS = "instance-groups";
 	static final String COMPUTE_EXTENSION_MANAGER = "extension-manager";
+	static final String COMPUTE_VM_MANAGER = "vm-manager";
+	static final String COMPUTE_BARE_METAL = "bare-metal";
 
 	/** Metadata key holding the Cloud Console URL a {@link #KIND_COMPUTE_LINK} entry opens when activated. */
 	static final String COMPUTE_URL = "nuclr.gcp.compute.url";
@@ -241,6 +243,11 @@ public final class GcpResource extends NuclrResource {
 	/** The VM Extension Manager category (browsable) under a project's Compute Engine service. */
 	static GcpResource computeExtensionManager(String projectId) {
 		return computeCategory(projectId, COMPUTE_EXTENSION_MANAGER, "VM Extension Manager", "Manage VM extensions");
+	}
+
+	/** The VM Manager category (browsable) under a project's Compute Engine service. */
+	static GcpResource computeVmManager(String projectId) {
+		return computeCategory(projectId, COMPUTE_VM_MANAGER, "VM Manager", "OS patch, config, and inventory");
 	}
 
 	/** The synthetic ".." entry that navigates from a Compute Engine category back to the Compute Engine service. */
