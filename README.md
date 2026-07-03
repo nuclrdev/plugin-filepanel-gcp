@@ -32,7 +32,7 @@ gcloud auth login
 The active account must have permission to list the resources you want to
 browse.
 
-## Navigation
+## 🧭 Navigation
 
 ```text
 GCP
@@ -51,7 +51,7 @@ Common function keys are exposed only where they apply. For example, GCS object
 folders expose copy, make-folder, delete, and find actions, while Pub/Sub topics
 expose create-topic.
 
-## Caching
+## 💾 Caching
 
 Listings are served from memory first, then from a restart-persistent disk cache
 under:
@@ -63,7 +63,7 @@ under:
 The cache does not expire on a timer. Use the panel refresh action to invalidate
 the currently open listing and re-query `gcloud`.
 
-## Build
+## 🔨 Build
 
 ```bash
 mvn -q test
@@ -74,7 +74,7 @@ mvn -q package -DskipTests
 detached ZIP signature and requires the configured signing keystore and
 `jarsigner.storepass` property.
 
-## Source Layout
+## 📂 Source Layout
 
 ```text
 src/main/java/dev/nuclr/plugin/core/panel/gcp/
@@ -88,7 +88,7 @@ src/main/java/dev/nuclr/plugin/core/panel/gcp/
   secret/                         Secret Manager listing
 ```
 
-## Dependencies
+## 📦 Dependencies
 
 | Library | Version | Purpose |
 |---|---|---|
@@ -97,6 +97,6 @@ src/main/java/dev/nuclr/plugin/core/panel/gcp/
 | `org.slf4j:slf4j-api` | `2.0.17` | Logging API |
 | `com.fasterxml.jackson.core:jackson-databind` | `2.21.1` | JSON parsing of `gcloud` output |
 
-## License
+## 📄 License
 
-Apache License 2.0. See [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE). ⚖️
