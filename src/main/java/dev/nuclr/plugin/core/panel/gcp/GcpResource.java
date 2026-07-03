@@ -91,6 +91,7 @@ public final class GcpResource extends NuclrResource {
 
 	static final String GKE_RESOURCES = "resources";
 	static final String GKE_CLUSTERS = "clusters";
+	static final String GKE_WORKLOADS = "workloads";
 
 	/** Metadata on a search-results root: the hit list, the panel title, and the origin folder. */
 	private static final String SEARCH_HITS = "nuclr.gcp.search.hits";
@@ -305,6 +306,11 @@ public final class GcpResource extends NuclrResource {
 		return gkeCategory(projectId, GKE_CLUSTERS, "Clusters", "GKE clusters");
 	}
 
+	/** The Workloads category (browsable, live-fetched) under GKE Resources management. */
+	static GcpResource gkeWorkloads(String projectId) {
+		return gkeCategory(projectId, GKE_WORKLOADS, "Workloads", "Deployed workloads");
+	}
+
 	/** The synthetic ".." entry that navigates from a GKE category back to the GKE service. */
 	static GcpResource parentToGke(String projectId) {
 		GcpResource r = gkeService(projectId);
@@ -327,6 +333,18 @@ public final class GcpResource extends NuclrResource {
 		r.getMetadata().put("Status", cluster.status());
 		r.getMetadata().put("Version", cluster.version());
 		r.getMetadata().put("Nodes", cluster.nodes());
+		return r;
+	}
+
+	/** A GKE workload entry (leaf); activating it opens the workload's overview page in the Cloud Console. */
+	static GcpResource gkeWorkload(String projectId, GkeWorkload workload) {
+		String path = "kubernetes/deployment/" + workload.location() + "/" + workload.cluster()
+				+ "/" + workload.namespace() + "/" + workload.name() + "/overview";
+		GcpResource r = consoleLinkTo(projectId, workload.name(), null, buildConsoleUrl(projectId, path));
+		r.getMetadata().put("Type", workload.type());
+		r.getMetadata().put("Namespace", workload.namespace());
+		r.getMetadata().put("Cluster", workload.cluster());
+		r.getMetadata().put("Ready", workload.ready());
 		return r;
 	}
 

@@ -73,6 +73,9 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	/** Columns shown for the GKE cluster listing. */
 	private static final List<String> CLUSTER_COLUMNS = List.of("Name", "Location", "Status", "Version", "Nodes");
 
+	/** Columns shown for the GKE workload listing. */
+	private static final List<String> WORKLOAD_COLUMNS = List.of("Name", "Type", "Namespace", "Cluster", "Ready");
+
 	/** Columns shown for the Pub/Sub topic listing. */
 	private static final List<String> TOPIC_COLUMNS = List.of("Name", "Retention");
 
@@ -182,6 +185,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	private final GcpSecretRepository secretRepository = new GcpSecretRepository();
 	private final GcpPubsubRepository pubsubRepository = new GcpPubsubRepository();
 	private final GkeClusterRepository gkeClusterRepository = new GkeClusterRepository();
+	private final GkeWorkloadRepository gkeWorkloadRepository = new GkeWorkloadRepository();
 
 	private NuclrPluginContext context;
 	private boolean focused;
@@ -194,6 +198,12 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 	/** Per-project bucket cache, keyed by project id. */
 	private final Map<String, List<GcsBucket>> bucketCache = new ConcurrentHashMap<>();
+
+	/** Per-project GKE cluster cache, keyed by project id. */
+	private final Map<String, List<GkeCluster>> clusterCache = new ConcurrentHashMap<>();
+
+	/** Per-project GKE workload cache, keyed by project id. */
+	private final Map<String, List<GkeWorkload>> workloadCache = new ConcurrentHashMap<>();
 
 	// Active object listing: a live, lazily-consumed gcloud stream plus the rows shown so far.
 	// One listing is active at a time; navigating away closes the pager (see openResource).
@@ -302,6 +312,8 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		context = null;
 		cachedProjects = null;
 		bucketCache.clear();
+		clusterCache.clear();
+		workloadCache.clear();
 		closePager();
 		GcsTempFiles.cleanup();
 		GcsEndpoints.clear();
@@ -532,6 +544,10 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			if (GcpResource.GKE_CLUSTERS.equals(category)) {
 				this.currentResource = GcpResource.gkeClusters(projectId);
 				return listGkeClusters(projectId, cancelled, sink);
+			}
+			if (GcpResource.GKE_WORKLOADS.equals(category)) {
+				this.currentResource = GcpResource.gkeWorkloads(projectId);
+				return listGkeWorkloads(projectId, cancelled, sink);
 			}
 			this.currentResource = GcpResource.gkeResourcesManagement(projectId);
 			return listGkeResourcesManagement(projectId, sink);
@@ -825,8 +841,8 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	}
 
 	/**
-	 * GKE Resources management lists its sections ({@code ..} then each). Clusters is a browsable folder
-	 * (live-fetched on entry); the rest open a Cloud Console page. Workloads is a link (no live fetch yet).
+	 * GKE Resources management lists its sections ({@code ..} then each). Clusters and Workloads are
+	 * browsable folders (live-fetched on entry); the rest open a Cloud Console page.
 	 */
 	private NuclrResourceData listGkeResourcesManagement(String projectId, EntrySink sink) {
 
@@ -839,7 +855,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		add(data, sink, GcpResource.parentToGke(projectId)); // ".." back to GKE
 		add(data, sink, GcpResource.consoleLink(projectId, "Overview", "Clusters overview", "kubernetes/list/overview"));
 		add(data, sink, GcpResource.gkeClusters(projectId)); // browsable: live cluster list
-		add(data, sink, GcpResource.consoleLink(projectId, "Workloads", "Deployed workloads", "kubernetes/workload/overview"));
+		add(data, sink, GcpResource.gkeWorkloads(projectId)); // browsable: live workload list
 		add(data, sink, GcpResource.consoleLink(projectId, "AI/ML", "AI/ML on GKE", "kubernetes/aiml/overview"));
 		add(data, sink, GcpResource.consoleLink(projectId, "Teams", "GKE teams", "kubernetes/teams"));
 		add(data, sink, GcpResource.consoleLink(projectId, "Applications", "Deployed applications", "kubernetes/application"));
@@ -862,23 +878,121 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 		add(data, sink, GcpResource.parentToGkeResources(projectId)); // ".." back to Resources management
 
+		List<GkeCluster> clusters = clusters(projectId);
+		if (clusters == null) {
+			// Hard error already surfaced via GcpErrorDialog; show just the "..".
+			return data;
+		}
+
+		for (GkeCluster cluster : clusters) {
+			if (cancelled != null && cancelled.get()) {
+				break;
+			}
+			add(data, sink, GcpResource.gkeCluster(projectId, cluster));
+		}
+		log.info("GKE cluster listing for {}: {} cluster(s)", projectId, clusters.size());
+		return data;
+	}
+
+	/**
+	 * Return a project's GKE clusters. Served from the in-memory hot layer, then the restart-persistent
+	 * {@link GcpDiskCache}, and only then from a live {@code gcloud} run (whose result is persisted).
+	 * Returns {@code null} on a hard error (already surfaced via {@link GcpErrorDialog}); "no clusters"
+	 * is an empty list.
+	 */
+	private List<GkeCluster> clusters(String projectId) {
+
+		List<GkeCluster> cached = clusterCache.get(projectId);
+		if (cached != null) {
+			return cached;
+		}
+
+		List<GkeCluster> disk = GcpDiskCache.loadClusters(projectId);
+		if (disk != null) {
+			clusterCache.put(projectId, disk);
+			return disk;
+		}
+
 		GkeClusterRepository.Result result = gkeClusterRepository.listClusters(projectId);
-		switch (result) {
+		return switch (result) {
 			case GkeClusterRepository.Result.Ok ok -> {
-				for (GkeCluster cluster : ok.clusters()) {
-					if (cancelled != null && cancelled.get()) {
-						break;
-					}
-					add(data, sink, GcpResource.gkeCluster(projectId, cluster));
-				}
-				log.info("GKE cluster listing for {}: {} cluster(s)", projectId, ok.clusters().size());
+				GcpDiskCache.saveClusters(projectId, ok.clusters());
+				clusterCache.put(projectId, ok.clusters());
+				yield ok.clusters();
 			}
 			case GkeClusterRepository.Result.Err err -> {
 				log.warn("GKE cluster list failed for {}: {}", projectId, err.error());
 				GcpErrorDialog.show(err.error());
+				yield null;
 			}
+		};
+	}
+
+	/** The Workloads category lists the project's workloads ({@code ..} then each), each opening its overview page. */
+	private NuclrResourceData listGkeWorkloads(String projectId, AtomicBoolean cancelled, EntrySink sink) {
+
+		var data = new NuclrResourceData();
+		data.setColumnNames(WORKLOAD_COLUMNS);
+		if (sink != null) {
+			sink.columns(WORKLOAD_COLUMNS);
 		}
+
+		add(data, sink, GcpResource.parentToGkeResources(projectId)); // ".." back to Resources management
+
+		List<GkeWorkload> workloads = workloads(projectId);
+		if (workloads == null) {
+			// Hard error already surfaced via GcpErrorDialog; show just the "..".
+			return data;
+		}
+
+		for (GkeWorkload workload : workloads) {
+			if (cancelled != null && cancelled.get()) {
+				break;
+			}
+			add(data, sink, GcpResource.gkeWorkload(projectId, workload));
+		}
+		log.info("GKE workload listing for {}: {} workload(s)", projectId, workloads.size());
 		return data;
+	}
+
+	/**
+	 * Return a project's GKE workloads. Served from the in-memory hot layer, then the restart-persistent
+	 * {@link GcpDiskCache}, and only then from a live run (list clusters, then kubectl per cluster) whose
+	 * result is persisted. Returns {@code null} on a hard error (already surfaced via {@link GcpErrorDialog});
+	 * "no workloads" is an empty list.
+	 */
+	private List<GkeWorkload> workloads(String projectId) {
+
+		List<GkeWorkload> cached = workloadCache.get(projectId);
+		if (cached != null) {
+			return cached;
+		}
+
+		List<GkeWorkload> disk = GcpDiskCache.loadWorkloads(projectId);
+		if (disk != null) {
+			workloadCache.put(projectId, disk);
+			return disk;
+		}
+
+		// Workloads live under clusters, so the workload fetch needs the (cached) cluster list first.
+		List<GkeCluster> clusters = clusters(projectId);
+		if (clusters == null) {
+			return null; // hard error already surfaced by clusters()
+		}
+
+		GkeWorkloadRepository.Result result = gkeWorkloadRepository.listWorkloads(projectId, clusters);
+		return switch (result) {
+			case GkeWorkloadRepository.Result.Ok ok -> {
+				GcpDiskCache.saveWorkloads(projectId, ok.workloads());
+				workloadCache.put(projectId, ok.workloads());
+				yield ok.workloads();
+			}
+			case GkeWorkloadRepository.Result.Err err -> {
+				log.warn("GKE workload list failed for {}: {}", projectId, err.error());
+				GcpErrorDialog.show(err.error());
+				yield null;
+			}
+		};
 	}
 
 	/** The Topics category lists the project's Pub/Sub topics ({@code ..} then each topic). */
@@ -1231,9 +1345,10 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	/**
 	 * Handles panel actions. On {@value #ACTION_REFRESH_PANEL} only the cached listing for the
 	 * <em>currently open</em> level is dropped — projects at the root, that project's buckets in
-	 * the GCS service, or that {@code (bucket, prefix)}'s objects inside a bucket — so the host's
-	 * follow-up reload re-queries just what the user is looking at. Other levels keep their
-	 * persistent cache. Other actions are ignored.
+	 * the GCS service, that {@code (bucket, prefix)}'s objects inside a bucket, or that project's GKE
+	 * clusters or workloads in the Clusters / Workloads listings — so the host's follow-up reload
+	 * re-queries just what the user is looking at. Other levels keep their persistent cache. Other
+	 * actions are ignored.
 	 */
 	@Override
 	public void act(BaseNuclrPlugin other, String actionType, List<NuclrResource> selectedResources,
@@ -1322,6 +1437,18 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			bucketCache.remove(projectId);
 			GcpDiskCache.clearBuckets(projectId);
 			log.info("GCS bucket listing for {} invalidated on '{}'", projectId, actionType);
+		} else if (GcpResource.isGkeCategory(currentResource)
+				&& GcpResource.GKE_CLUSTERS.equals(GcpResource.gkeCategory(currentResource))) {
+			String projectId = GcpResource.projectId(currentResource);
+			clusterCache.remove(projectId);
+			GcpDiskCache.clearClusters(projectId);
+			log.info("GKE cluster listing for {} invalidated on '{}'", projectId, actionType);
+		} else if (GcpResource.isGkeCategory(currentResource)
+				&& GcpResource.GKE_WORKLOADS.equals(GcpResource.gkeCategory(currentResource))) {
+			String projectId = GcpResource.projectId(currentResource);
+			workloadCache.remove(projectId);
+			GcpDiskCache.clearWorkloads(projectId);
+			log.info("GKE workload listing for {} invalidated on '{}'", projectId, actionType);
 		} else if (GcpResource.isRoot(currentResource)) {
 			cachedProjects = null;
 			GcpDiskCache.clearProjects();
