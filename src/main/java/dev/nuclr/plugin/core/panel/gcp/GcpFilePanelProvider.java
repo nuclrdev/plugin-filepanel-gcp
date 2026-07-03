@@ -503,6 +503,10 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 				this.currentResource = GcpResource.computeVmManager(projectId);
 				return listComputeVmManager(projectId, sink);
 			}
+			if (GcpResource.COMPUTE_BARE_METAL.equals(category)) {
+				this.currentResource = GcpResource.computeBareMetalSolution(projectId);
+				return listComputeBareMetalSolution(projectId, sink);
+			}
 			this.currentResource = GcpResource.computeVirtualMachines(projectId);
 			return listComputeVirtualMachines(projectId, sink);
 		}
@@ -647,7 +651,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		add(data, sink, GcpResource.computeInstanceGroups(projectId));
 		add(data, sink, GcpResource.computeExtensionManager(projectId));
 		add(data, sink, GcpResource.computeVmManager(projectId));
-		add(data, sink, GcpResource.computeCategory(projectId, null, "Bar Metal Solution", "Bare-metal infrastructure"));
+		add(data, sink, GcpResource.computeBareMetalSolution(projectId));
 		add(data, sink, GcpResource.computeCategory(projectId, null, "Settings", "Compute Engine settings"));
 		return data;
 	}
@@ -733,6 +737,26 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		add(data, sink, GcpResource.parentToCompute(projectId)); // ".." back to Compute Engine
 		add(data, sink, GcpResource.computeLink(projectId, "Patch", "OS patch management", "compute/patch"));
 		add(data, sink, GcpResource.computeLink(projectId, "OS policies", "OS configuration policies", "compute/config/projects"));
+		return data;
+	}
+
+	/** The Bare Metal Solution category lists its sections ({@code ..} then each), each opening a Cloud Console page. */
+	private NuclrResourceData listComputeBareMetalSolution(String projectId, EntrySink sink) {
+
+		var data = new NuclrResourceData();
+		data.setColumnNames(SERVICE_COLUMNS);
+		if (sink != null) {
+			sink.columns(SERVICE_COLUMNS);
+		}
+
+		add(data, sink, GcpResource.parentToCompute(projectId)); // ".." back to Compute Engine
+		add(data, sink, GcpResource.computeLink(projectId, "Servers", "Bare metal servers", "compute/bareMetalSolution/servers"));
+		add(data, sink, GcpResource.computeLink(projectId, "Networks", "Bare metal networks", "compute/bareMetalSolution/networks"));
+		add(data, sink, GcpResource.computeLink(projectId, "VRFs", "Virtual routing and forwarding", "compute/bareMetalSolution/vrfs"));
+		add(data, sink, GcpResource.computeLink(projectId, "Volumes", "Storage volumes", "compute/bareMetalSolution/volumes"));
+		add(data, sink, GcpResource.computeLink(projectId, "NFS shares", "NFS file shares", "compute/bareMetalSolution/nfsShares"));
+		add(data, sink, GcpResource.computeLink(projectId, "Procurements", "Resource procurements", "compute/bareMetalSolution/procurements"));
+		add(data, sink, GcpResource.computeLink(projectId, "Maintenance events", "Scheduled maintenance events", "compute/bareMetalSolution/maintenanceEvents"));
 		return data;
 	}
 
