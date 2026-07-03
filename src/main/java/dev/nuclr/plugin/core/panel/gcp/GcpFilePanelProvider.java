@@ -463,6 +463,10 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 				this.currentResource = GcpResource.secretManagerService(projectId);
 				return listSecrets(projectId, cancelled, sink);
 			}
+			if (GcpResource.SERVICE_COMPUTE.equals(serviceType)) {
+				this.currentResource = GcpResource.computeEngineService(projectId);
+				return listComputeEngine(projectId, sink);
+			}
 			// Any other (future) service is not browsable yet; show only the "..".
 			this.currentResource = GcpResource.pubsubService(projectId);
 			return serviceStub(projectId, sink);
@@ -529,7 +533,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		return data;
 	}
 
-	/** A project lists the GCP services it exposes ({@code ..}, GCS, Pub/Sub, Secret Manager). */
+	/** A project lists the GCP services it exposes ({@code ..}, GCS, Pub/Sub, Compute Engine, Secret Manager). */
 	private NuclrResourceData listServices(String projectId, EntrySink sink) {
 
 		var data = new NuclrResourceData();
@@ -541,6 +545,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		add(data, sink, GcpResource.parent()); // ".." back to the project list
 		add(data, sink, GcpResource.gcsService(projectId));
 		add(data, sink, GcpResource.pubsubService(projectId));
+		add(data, sink, GcpResource.computeEngineService(projectId));
 		add(data, sink, GcpResource.secretManagerService(projectId));
 		return data;
 	}
@@ -599,6 +604,26 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		add(data, sink, GcpResource.parentToProject(projectId)); // ".." back to the service list
 		add(data, sink, GcpResource.pubsubTopics(projectId));
 		add(data, sink, GcpResource.pubsubSubscriptions(projectId));
+		return data;
+	}
+
+	/** The Compute Engine service lists its sections ({@code ..} then each section). */
+	private NuclrResourceData listComputeEngine(String projectId, EntrySink sink) {
+
+		var data = new NuclrResourceData();
+		data.setColumnNames(SERVICE_COLUMNS);
+		if (sink != null) {
+			sink.columns(SERVICE_COLUMNS);
+		}
+
+		add(data, sink, GcpResource.parentToProject(projectId)); // ".." back to the service list
+		add(data, sink, GcpResource.computeCategory(projectId, "Virtual Machines", "VM instances"));
+		add(data, sink, GcpResource.computeCategory(projectId, "Storage", "Disks, snapshots, and images"));
+		add(data, sink, GcpResource.computeCategory(projectId, "Instance Groups", "Managed and unmanaged instance groups"));
+		add(data, sink, GcpResource.computeCategory(projectId, "VM Extension Manager", "Manage VM extensions"));
+		add(data, sink, GcpResource.computeCategory(projectId, "VM Manager", "OS patch, config, and inventory"));
+		add(data, sink, GcpResource.computeCategory(projectId, "Bar Metal Solution", "Bare-metal infrastructure"));
+		add(data, sink, GcpResource.computeCategory(projectId, "Settings", "Compute Engine settings"));
 		return data;
 	}
 

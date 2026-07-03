@@ -58,6 +58,7 @@ public final class GcpResource extends NuclrResource {
 	static final String KIND_PUBSUB_TOPIC = "pubsub-topic";
 	static final String KIND_PUBSUB_SUBSCRIPTION = "pubsub-subscription";
 	static final String KIND_SECRET = "secret";
+	static final String KIND_COMPUTE_CATEGORY = "compute-category";
 
 	/** Metadata key holding a secret's short id (on secret resources), for the Console URL. */
 	static final String SECRET_NAME = "nuclr.gcp.secret.name";
@@ -82,6 +83,7 @@ public final class GcpResource extends NuclrResource {
 	static final String SERVICE_GCS = "gcs";
 	static final String SERVICE_PUBSUB = "pubsub";
 	static final String SERVICE_SECRET = "secretmanager";
+	static final String SERVICE_COMPUTE = "compute";
 
 	/** Metadata: bucket name and object-key prefix on bucket / object-dir / load-more resources. */
 	static final String BUCKET = "nuclr.gcp.bucket";
@@ -182,6 +184,27 @@ public final class GcpResource extends NuclrResource {
 	/** The Secret Manager service entry under a project. */
 	static GcpResource secretManagerService(String projectId) {
 		return service(projectId, SERVICE_SECRET, "Secret Manager", "Secrets and versions");
+	}
+
+	/** The Compute Engine service entry under a project. */
+	static GcpResource computeEngineService(String projectId) {
+		return service(projectId, SERVICE_COMPUTE, "Compute Engine", "Virtual machines and infrastructure");
+	}
+
+	/**
+	 * A Compute Engine section entry (leaf) shown under the Compute Engine service — e.g. Virtual
+	 * Machines, Storage, Instance Groups. These are display-only for now (not browsable).
+	 */
+	static GcpResource computeCategory(String projectId, String displayName, String description) {
+		GcpResource r = new GcpResource();
+		r.setUuid(ROOT_UUID + "project/" + projectId + "/compute/" + displayName);
+		r.setFullPath(r.getUuid());
+		r.setFolder(false);
+		r.getMetadata().put(KIND, KIND_COMPUTE_CATEGORY);
+		r.getMetadata().put(PROJECT_ID, projectId);
+		r.rename(displayName);
+		r.getMetadata().put("Description", description);
+		return r;
 	}
 
 	/** The synthetic ".." entry that navigates from a Pub/Sub category back to the Pub/Sub service. */
