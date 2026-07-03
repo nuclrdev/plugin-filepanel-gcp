@@ -256,6 +256,11 @@ public final class GcpResource extends NuclrResource {
 		return computeCategory(projectId, COMPUTE_BARE_METAL, "Bare Metal Solution", "Bare-metal infrastructure");
 	}
 
+	/** The Settings category (browsable) under a project's Compute Engine service. */
+	static GcpResource computeSettings(String projectId) {
+		return computeCategory(projectId, COMPUTE_SETTINGS, "Settings", "Compute Engine settings");
+	}
+
 	/** The synthetic ".." entry that navigates from a Compute Engine category back to the Compute Engine service. */
 	static GcpResource parentToCompute(String projectId) {
 		GcpResource r = computeEngineService(projectId);

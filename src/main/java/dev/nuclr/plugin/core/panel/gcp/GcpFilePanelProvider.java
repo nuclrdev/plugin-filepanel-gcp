@@ -507,6 +507,10 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 				this.currentResource = GcpResource.computeBareMetalSolution(projectId);
 				return listComputeBareMetalSolution(projectId, sink);
 			}
+			if (GcpResource.COMPUTE_SETTINGS.equals(category)) {
+				this.currentResource = GcpResource.computeSettings(projectId);
+				return listComputeSettings(projectId, sink);
+			}
 			this.currentResource = GcpResource.computeVirtualMachines(projectId);
 			return listComputeVirtualMachines(projectId, sink);
 		}
@@ -652,7 +656,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		add(data, sink, GcpResource.computeExtensionManager(projectId));
 		add(data, sink, GcpResource.computeVmManager(projectId));
 		add(data, sink, GcpResource.computeBareMetalSolution(projectId));
-		add(data, sink, GcpResource.computeCategory(projectId, null, "Settings", "Compute Engine settings"));
+		add(data, sink, GcpResource.computeSettings(projectId));
 		return data;
 	}
 
@@ -757,6 +761,26 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		add(data, sink, GcpResource.computeLink(projectId, "NFS shares", "NFS file shares", "compute/bareMetalSolution/nfsShares"));
 		add(data, sink, GcpResource.computeLink(projectId, "Procurements", "Resource procurements", "compute/bareMetalSolution/procurements"));
 		add(data, sink, GcpResource.computeLink(projectId, "Maintenance events", "Scheduled maintenance events", "compute/bareMetalSolution/maintenanceEvents"));
+		return data;
+	}
+
+	/** The Settings category lists its sections ({@code ..} then each), each opening a Cloud Console page. */
+	private NuclrResourceData listComputeSettings(String projectId, EntrySink sink) {
+
+		var data = new NuclrResourceData();
+		data.setColumnNames(SERVICE_COLUMNS);
+		if (sink != null) {
+			sink.columns(SERVICE_COLUMNS);
+		}
+
+		add(data, sink, GcpResource.parentToCompute(projectId)); // ".." back to Compute Engine
+		add(data, sink, GcpResource.computeLink(projectId, "Rollouts", "Configuration rollouts", "compute/rollouts"));
+		add(data, sink, GcpResource.computeLink(projectId, "Metadata", "Project metadata", "compute/metadata"));
+		add(data, sink, GcpResource.computeLink(projectId, "Zones", "Compute zones", "compute/zones"));
+		add(data, sink, GcpResource.computeLink(projectId, "Network endpoint groups", "Network endpoint groups", "compute/networkendpointgroups/list"));
+		add(data, sink, GcpResource.computeLink(projectId, "Preview features", "Preview features", "compute/previewFeatures"));
+		add(data, sink, GcpResource.computeLink(projectId, "Operations", "Compute operations", "compute/operations"));
+		add(data, sink, GcpResource.computeLink(projectId, "Settings", "Compute Engine settings", "compute/settings"));
 		return data;
 	}
 
