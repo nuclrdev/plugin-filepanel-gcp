@@ -59,6 +59,7 @@ public final class GcpResource extends NuclrResource {
 	static final String KIND_PUBSUB_SUBSCRIPTION = "pubsub-subscription";
 	static final String KIND_SECRET = "secret";
 	static final String KIND_COMPUTE_CATEGORY = "compute-category";
+	static final String KIND_COMPUTE_LINK = "compute-link";
 
 	/** Metadata key holding a secret's short id (on secret resources), for the Console URL. */
 	static final String SECRET_NAME = "nuclr.gcp.secret.name";
@@ -68,6 +69,17 @@ public final class GcpResource extends NuclrResource {
 
 	static final String PUBSUB_TOPICS = "topics";
 	static final String PUBSUB_SUBSCRIPTIONS = "subscriptions";
+
+	/** Metadata key identifying which browsable Compute Engine category a {@link #KIND_COMPUTE_CATEGORY} node is. */
+	static final String COMPUTE_CATEGORY = "nuclr.gcp.compute.category";
+
+	static final String COMPUTE_VMS = "vms";
+	static final String COMPUTE_STORAGE = "storage";
+	static final String COMPUTE_INSTANCE_GROUPS = "instance-groups";
+	static final String COMPUTE_EXTENSION_MANAGER = "extension-manager";
+
+	/** Metadata key holding the Cloud Console URL a {@link #KIND_COMPUTE_LINK} entry opens when activated. */
+	static final String COMPUTE_URL = "nuclr.gcp.compute.url";
 
 	/** Metadata on a search-results root: the hit list, the panel title, and the origin folder. */
 	private static final String SEARCH_HITS = "nuclr.gcp.search.hits";
@@ -192,19 +204,81 @@ public final class GcpResource extends NuclrResource {
 	}
 
 	/**
-	 * A Compute Engine section entry (leaf) shown under the Compute Engine service — e.g. Virtual
-	 * Machines, Storage, Instance Groups. These are display-only for now (not browsable).
+	 * A Compute Engine section entry shown under the Compute Engine service — e.g. Virtual Machines,
+	 * Storage, Instance Groups. A non-null {@code category} makes it a browsable folder (its sections
+	 * are listed on entry); a {@code null} category makes it a display-only leaf (not browsable yet).
 	 */
-	static GcpResource computeCategory(String projectId, String displayName, String description) {
+	static GcpResource computeCategory(String projectId, String category, String displayName, String description) {
 		GcpResource r = new GcpResource();
 		r.setUuid(ROOT_UUID + "project/" + projectId + "/compute/" + displayName);
 		r.setFullPath(r.getUuid());
-		r.setFolder(false);
+		r.setFolder(category != null);
 		r.getMetadata().put(KIND, KIND_COMPUTE_CATEGORY);
 		r.getMetadata().put(PROJECT_ID, projectId);
+		if (category != null) {
+			r.getMetadata().put(COMPUTE_CATEGORY, category);
+		}
 		r.rename(displayName);
 		r.getMetadata().put("Description", description);
 		return r;
+	}
+
+	/** The Virtual Machines category (browsable) under a project's Compute Engine service. */
+	static GcpResource computeVirtualMachines(String projectId) {
+		return computeCategory(projectId, COMPUTE_VMS, "Virtual Machines", "VM instances");
+	}
+
+	/** The Storage category (browsable) under a project's Compute Engine service. */
+	static GcpResource computeStorage(String projectId) {
+		return computeCategory(projectId, COMPUTE_STORAGE, "Storage", "Disks, snapshots, and images");
+	}
+
+	/** The Instance Groups category (browsable) under a project's Compute Engine service. */
+	static GcpResource computeInstanceGroups(String projectId) {
+		return computeCategory(projectId, COMPUTE_INSTANCE_GROUPS, "Instance Groups", "Managed and unmanaged instance groups");
+	}
+
+	/** The VM Extension Manager category (browsable) under a project's Compute Engine service. */
+	static GcpResource computeExtensionManager(String projectId) {
+		return computeCategory(projectId, COMPUTE_EXTENSION_MANAGER, "VM Extension Manager", "Manage VM extensions");
+	}
+
+	/** The synthetic ".." entry that navigates from a Compute Engine category back to the Compute Engine service. */
+	static GcpResource parentToCompute(String projectId) {
+		GcpResource r = computeEngineService(projectId);
+		r.rename("..");
+		return r;
+	}
+
+	/**
+	 * A Compute Engine "link" entry (leaf) shown under a browsable compute category (e.g. VM Instances
+	 * under Virtual Machines). It is not navigable; activating it opens the Cloud Console page at
+	 * {@code consolePath} (scoped to {@code projectId}) in the default browser.
+	 */
+	static GcpResource computeLink(String projectId, String displayName, String description, String consolePath) {
+		GcpResource r = new GcpResource();
+		r.setUuid(ROOT_UUID + "project/" + projectId + "/compute/link/" + displayName);
+		r.setFullPath(r.getUuid());
+		r.setFolder(false);
+		r.getMetadata().put(KIND, KIND_COMPUTE_LINK);
+		r.getMetadata().put(PROJECT_ID, projectId);
+		r.rename(displayName);
+		r.getMetadata().put("Description", description);
+		r.getMetadata().put(COMPUTE_URL, computeConsoleUrl(projectId, consolePath));
+		return r;
+	}
+
+	/**
+	 * Build {@code https://console.cloud.google.com/<consolePath>?project=<projectId>} for a compute-link
+	 * entry, joining with {@code &} instead when {@code consolePath} already carries a query string.
+	 */
+	private static String computeConsoleUrl(String projectId, String consolePath) {
+		var url = new StringBuilder("https://console.cloud.google.com/").append(consolePath);
+		if (projectId != null && !projectId.isBlank()) {
+			url.append(consolePath.indexOf('?') < 0 ? '?' : '&')
+					.append("project=").append(URLEncoder.encode(projectId, StandardCharsets.UTF_8));
+		}
+		return url.toString();
 	}
 
 	/** The synthetic ".." entry that navigates from a Pub/Sub category back to the Pub/Sub service. */
@@ -506,6 +580,17 @@ public final class GcpResource extends NuclrResource {
 		return metaString(resource, PUBSUB_CATEGORY);
 	}
 
+	/** A browsable Compute Engine category node (carries a {@link #COMPUTE_CATEGORY} id), e.g. Virtual Machines. */
+	static boolean isComputeCategory(NuclrResource resource) {
+		return resource != null && KIND_COMPUTE_CATEGORY.equals(resource.getMetadata().get(KIND))
+				&& resource.getMetadata().get(COMPUTE_CATEGORY) != null;
+	}
+
+	/** The Compute Engine category id ({@link #COMPUTE_VMS}) of a browsable category node, or {@code null}. */
+	static String computeCategory(NuclrResource resource) {
+		return metaString(resource, COMPUTE_CATEGORY);
+	}
+
 	public static boolean isBucket(NuclrResource resource) {
 		return resource != null && KIND_BUCKET.equals(resource.getMetadata().get(KIND));
 	}
@@ -618,7 +703,18 @@ public final class GcpResource extends NuclrResource {
 		return url.toString();
 	}
 
-	/** The Cloud Console URL for whichever activatable resource this is (object, secret, topic, subscription), or {@code null}. */
+	/**
+	 * The Cloud Console URL a compute-link entry (e.g. VM Instances) opens when activated, stored on the
+	 * resource at creation, or {@code null} if the resource is not a compute link.
+	 */
+	static String computeLinkConsoleUrl(NuclrResource resource) {
+		if (resource == null || !KIND_COMPUTE_LINK.equals(resource.getMetadata().get(KIND))) {
+			return null;
+		}
+		return metaString(resource, COMPUTE_URL);
+	}
+
+	/** The Cloud Console URL for whichever activatable resource this is (object, secret, topic, subscription, compute link), or {@code null}. */
 	static String consoleUrl(NuclrResource resource) {
 		String url = objectConsoleUrl(resource);
 		if (url == null) {
@@ -629,6 +725,9 @@ public final class GcpResource extends NuclrResource {
 		}
 		if (url == null) {
 			url = subscriptionConsoleUrl(resource);
+		}
+		if (url == null) {
+			url = computeLinkConsoleUrl(resource);
 		}
 		return url;
 	}

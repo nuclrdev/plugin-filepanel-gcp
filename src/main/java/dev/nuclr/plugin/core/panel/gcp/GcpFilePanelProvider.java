@@ -482,6 +482,27 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			return listTopics(projectId, cancelled, sink);
 		}
 
+		if (GcpResource.isComputeCategory(resourceToOpen)) {
+			// Rebuild a clean category node (the incoming resource may be the ".." back from here) so
+			// the location bar shows the category name rather than "..".
+			String projectId = GcpResource.projectId(resourceToOpen);
+			String category = GcpResource.computeCategory(resourceToOpen);
+			if (GcpResource.COMPUTE_STORAGE.equals(category)) {
+				this.currentResource = GcpResource.computeStorage(projectId);
+				return listComputeStorage(projectId, sink);
+			}
+			if (GcpResource.COMPUTE_INSTANCE_GROUPS.equals(category)) {
+				this.currentResource = GcpResource.computeInstanceGroups(projectId);
+				return listComputeInstanceGroups(projectId, sink);
+			}
+			if (GcpResource.COMPUTE_EXTENSION_MANAGER.equals(category)) {
+				this.currentResource = GcpResource.computeExtensionManager(projectId);
+				return listComputeExtensionManager(projectId, sink);
+			}
+			this.currentResource = GcpResource.computeVirtualMachines(projectId);
+			return listComputeVirtualMachines(projectId, sink);
+		}
+
 		// Entering a bucket (prefix "") or a sub-folder: list its immediate objects/folders.
 		if (GcpResource.isBucket(resourceToOpen) || GcpResource.isObjectDir(resourceToOpen)) {
 			String projectId = GcpResource.projectId(resourceToOpen);
@@ -617,13 +638,82 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		}
 
 		add(data, sink, GcpResource.parentToProject(projectId)); // ".." back to the service list
-		add(data, sink, GcpResource.computeCategory(projectId, "Virtual Machines", "VM instances"));
-		add(data, sink, GcpResource.computeCategory(projectId, "Storage", "Disks, snapshots, and images"));
-		add(data, sink, GcpResource.computeCategory(projectId, "Instance Groups", "Managed and unmanaged instance groups"));
-		add(data, sink, GcpResource.computeCategory(projectId, "VM Extension Manager", "Manage VM extensions"));
-		add(data, sink, GcpResource.computeCategory(projectId, "VM Manager", "OS patch, config, and inventory"));
-		add(data, sink, GcpResource.computeCategory(projectId, "Bar Metal Solution", "Bare-metal infrastructure"));
-		add(data, sink, GcpResource.computeCategory(projectId, "Settings", "Compute Engine settings"));
+		add(data, sink, GcpResource.computeVirtualMachines(projectId));
+		add(data, sink, GcpResource.computeStorage(projectId));
+		add(data, sink, GcpResource.computeInstanceGroups(projectId));
+		add(data, sink, GcpResource.computeExtensionManager(projectId));
+		add(data, sink, GcpResource.computeCategory(projectId, null, "VM Manager", "OS patch, config, and inventory"));
+		add(data, sink, GcpResource.computeCategory(projectId, null, "Bar Metal Solution", "Bare-metal infrastructure"));
+		add(data, sink, GcpResource.computeCategory(projectId, null, "Settings", "Compute Engine settings"));
+		return data;
+	}
+
+	/** The Virtual Machines category lists its sections ({@code ..} then each), each opening a Cloud Console page. */
+	private NuclrResourceData listComputeVirtualMachines(String projectId, EntrySink sink) {
+
+		var data = new NuclrResourceData();
+		data.setColumnNames(SERVICE_COLUMNS);
+		if (sink != null) {
+			sink.columns(SERVICE_COLUMNS);
+		}
+
+		add(data, sink, GcpResource.parentToCompute(projectId)); // ".." back to Compute Engine
+		add(data, sink, GcpResource.computeLink(projectId, "VM Instances", "Virtual machine instances", "compute/instances"));
+		add(data, sink, GcpResource.computeLink(projectId, "Instance templates", "Reusable VM configurations", "compute/instanceTemplates/list"));
+		add(data, sink, GcpResource.computeLink(projectId, "Sole-tenant nodes", "Dedicated host hardware", "compute/soleTenancy"));
+		add(data, sink, GcpResource.computeLink(projectId, "Machine images", "Full VM backups", "compute/machineImages"));
+		add(data, sink, GcpResource.computeLink(projectId, "TPUs", "Tensor Processing Units", "compute/tpus"));
+		add(data, sink, GcpResource.computeLink(projectId, "Committed-use discounts", "Committed-use contracts", "compute/commitments"));
+		add(data, sink, GcpResource.computeLink(projectId, "Reservations", "Reserved VM capacity", "compute/reservations"));
+		add(data, sink, GcpResource.computeLink(projectId, "Capacity advisor", "Capacity recommendations", "compute/capacityAdvisor"));
+		return data;
+	}
+
+	/** The Storage category lists its sections ({@code ..} then each), each opening a Cloud Console page. */
+	private NuclrResourceData listComputeStorage(String projectId, EntrySink sink) {
+
+		var data = new NuclrResourceData();
+		data.setColumnNames(SERVICE_COLUMNS);
+		if (sink != null) {
+			sink.columns(SERVICE_COLUMNS);
+		}
+
+		add(data, sink, GcpResource.parentToCompute(projectId)); // ".." back to Compute Engine
+		add(data, sink, GcpResource.computeLink(projectId, "Disks", "Persistent and boot disks", "compute/disks"));
+		add(data, sink, GcpResource.computeLink(projectId, "Storage pools", "Pooled block storage", "compute/storagePools"));
+		add(data, sink, GcpResource.computeLink(projectId, "Snapshots", "Disk snapshots", "compute/snapshots"));
+		add(data, sink, GcpResource.computeLink(projectId, "Images", "Custom and public images", "compute/images?tab=images"));
+		add(data, sink, GcpResource.computeLink(projectId, "Async replication", "Cross-region disk replication", "compute/asynchronousReplication"));
+		add(data, sink, GcpResource.computeLink(projectId, "Consistency groups", "Replication consistency groups", "compute/consistencyGroups"));
+		return data;
+	}
+
+	/** The Instance Groups category lists its sections ({@code ..} then each), each opening a Cloud Console page. */
+	private NuclrResourceData listComputeInstanceGroups(String projectId, EntrySink sink) {
+
+		var data = new NuclrResourceData();
+		data.setColumnNames(SERVICE_COLUMNS);
+		if (sink != null) {
+			sink.columns(SERVICE_COLUMNS);
+		}
+
+		add(data, sink, GcpResource.parentToCompute(projectId)); // ".." back to Compute Engine
+		add(data, sink, GcpResource.computeLink(projectId, "Instant groups", "Managed and unmanaged instance groups", "compute/instanceGroups/list"));
+		add(data, sink, GcpResource.computeLink(projectId, "Health checks", "Instance health checks", "compute/healthChecks"));
+		return data;
+	}
+
+	/** The VM Extension Manager category lists its sections ({@code ..} then each), each opening a Cloud Console page. */
+	private NuclrResourceData listComputeExtensionManager(String projectId, EntrySink sink) {
+
+		var data = new NuclrResourceData();
+		data.setColumnNames(SERVICE_COLUMNS);
+		if (sink != null) {
+			sink.columns(SERVICE_COLUMNS);
+		}
+
+		add(data, sink, GcpResource.parentToCompute(projectId)); // ".." back to Compute Engine
+		add(data, sink, GcpResource.computeLink(projectId, "Extension policies", "VM extension policies", "compute/extensionManager/policies/global"));
 		return data;
 	}
 
@@ -1269,6 +1359,9 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		}
 		if (GcpResource.isPubsubCategory(currentResource)) {
 			return "GCP: " + GcpResource.projectId(currentResource) + " / Pub/Sub / " + currentResource.getName();
+		}
+		if (GcpResource.isComputeCategory(currentResource)) {
+			return "GCP: " + GcpResource.projectId(currentResource) + " / Compute Engine / " + currentResource.getName();
 		}
 		if (GcpResource.isService(currentResource)) {
 			return "GCP: " + GcpResource.projectId(currentResource) + " / " + currentResource.getName();
