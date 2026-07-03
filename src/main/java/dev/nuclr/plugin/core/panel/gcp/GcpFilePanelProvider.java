@@ -1,6 +1,7 @@
 package dev.nuclr.plugin.core.panel.gcp;
 
 import dev.nuclr.plugin.core.panel.gcp.gcs.*;
+import dev.nuclr.plugin.core.panel.gcp.gke.*;
 import dev.nuclr.plugin.core.panel.gcp.pubsub.*;
 import dev.nuclr.plugin.core.panel.gcp.secret.*;
 
@@ -68,6 +69,9 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 	/** Columns shown for the service listing under a project (GCS, Pub/Sub). */
 	private static final List<String> SERVICE_COLUMNS = List.of("Name", "Description");
+
+	/** Columns shown for the GKE cluster listing. */
+	private static final List<String> CLUSTER_COLUMNS = List.of("Name", "Location", "Status", "Version", "Nodes");
 
 	/** Columns shown for the Pub/Sub topic listing. */
 	private static final List<String> TOPIC_COLUMNS = List.of("Name", "Retention");
@@ -177,6 +181,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	private final GcsBucketRepository bucketRepository = new GcsBucketRepository();
 	private final GcpSecretRepository secretRepository = new GcpSecretRepository();
 	private final GcpPubsubRepository pubsubRepository = new GcpPubsubRepository();
+	private final GkeClusterRepository gkeClusterRepository = new GkeClusterRepository();
 
 	private NuclrPluginContext context;
 	private boolean focused;
@@ -519,6 +524,19 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			return listComputeVirtualMachines(projectId, sink);
 		}
 
+		if (GcpResource.isGkeCategory(resourceToOpen)) {
+			// Rebuild a clean category node (the incoming resource may be the ".." back from here) so
+			// the location bar shows the category name rather than "..".
+			String projectId = GcpResource.projectId(resourceToOpen);
+			String category = GcpResource.gkeCategory(resourceToOpen);
+			if (GcpResource.GKE_CLUSTERS.equals(category)) {
+				this.currentResource = GcpResource.gkeClusters(projectId);
+				return listGkeClusters(projectId, cancelled, sink);
+			}
+			this.currentResource = GcpResource.gkeResourcesManagement(projectId);
+			return listGkeResourcesManagement(projectId, sink);
+		}
+
 		// Entering a bucket (prefix "") or a sub-folder: list its immediate objects/folders.
 		if (GcpResource.isBucket(resourceToOpen) || GcpResource.isObjectDir(resourceToOpen)) {
 			String projectId = GcpResource.projectId(resourceToOpen);
@@ -675,14 +693,14 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		}
 
 		add(data, sink, GcpResource.parentToCompute(projectId)); // ".." back to Compute Engine
-		add(data, sink, GcpResource.computeLink(projectId, "VM Instances", "Virtual machine instances", "compute/instances"));
-		add(data, sink, GcpResource.computeLink(projectId, "Instance templates", "Reusable VM configurations", "compute/instanceTemplates/list"));
-		add(data, sink, GcpResource.computeLink(projectId, "Sole-tenant nodes", "Dedicated host hardware", "compute/soleTenancy"));
-		add(data, sink, GcpResource.computeLink(projectId, "Machine images", "Full VM backups", "compute/machineImages"));
-		add(data, sink, GcpResource.computeLink(projectId, "TPUs", "Tensor Processing Units", "compute/tpus"));
-		add(data, sink, GcpResource.computeLink(projectId, "Committed-use discounts", "Committed-use contracts", "compute/commitments"));
-		add(data, sink, GcpResource.computeLink(projectId, "Reservations", "Reserved VM capacity", "compute/reservations"));
-		add(data, sink, GcpResource.computeLink(projectId, "Capacity advisor", "Capacity recommendations", "compute/capacityAdvisor"));
+		add(data, sink, GcpResource.consoleLink(projectId, "VM Instances", "Virtual machine instances", "compute/instances"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Instance templates", "Reusable VM configurations", "compute/instanceTemplates/list"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Sole-tenant nodes", "Dedicated host hardware", "compute/soleTenancy"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Machine images", "Full VM backups", "compute/machineImages"));
+		add(data, sink, GcpResource.consoleLink(projectId, "TPUs", "Tensor Processing Units", "compute/tpus"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Committed-use discounts", "Committed-use contracts", "compute/commitments"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Reservations", "Reserved VM capacity", "compute/reservations"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Capacity advisor", "Capacity recommendations", "compute/capacityAdvisor"));
 		return data;
 	}
 
@@ -696,12 +714,12 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		}
 
 		add(data, sink, GcpResource.parentToCompute(projectId)); // ".." back to Compute Engine
-		add(data, sink, GcpResource.computeLink(projectId, "Disks", "Persistent and boot disks", "compute/disks"));
-		add(data, sink, GcpResource.computeLink(projectId, "Storage pools", "Pooled block storage", "compute/storagePools"));
-		add(data, sink, GcpResource.computeLink(projectId, "Snapshots", "Disk snapshots", "compute/snapshots"));
-		add(data, sink, GcpResource.computeLink(projectId, "Images", "Custom and public images", "compute/images?tab=images"));
-		add(data, sink, GcpResource.computeLink(projectId, "Async replication", "Cross-region disk replication", "compute/asynchronousReplication"));
-		add(data, sink, GcpResource.computeLink(projectId, "Consistency groups", "Replication consistency groups", "compute/consistencyGroups"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Disks", "Persistent and boot disks", "compute/disks"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Storage pools", "Pooled block storage", "compute/storagePools"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Snapshots", "Disk snapshots", "compute/snapshots"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Images", "Custom and public images", "compute/images?tab=images"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Async replication", "Cross-region disk replication", "compute/asynchronousReplication"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Consistency groups", "Replication consistency groups", "compute/consistencyGroups"));
 		return data;
 	}
 
@@ -715,8 +733,8 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		}
 
 		add(data, sink, GcpResource.parentToCompute(projectId)); // ".." back to Compute Engine
-		add(data, sink, GcpResource.computeLink(projectId, "Instant groups", "Managed and unmanaged instance groups", "compute/instanceGroups/list"));
-		add(data, sink, GcpResource.computeLink(projectId, "Health checks", "Instance health checks", "compute/healthChecks"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Instant groups", "Managed and unmanaged instance groups", "compute/instanceGroups/list"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Health checks", "Instance health checks", "compute/healthChecks"));
 		return data;
 	}
 
@@ -730,7 +748,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		}
 
 		add(data, sink, GcpResource.parentToCompute(projectId)); // ".." back to Compute Engine
-		add(data, sink, GcpResource.computeLink(projectId, "Extension policies", "VM extension policies", "compute/extensionManager/policies/global"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Extension policies", "VM extension policies", "compute/extensionManager/policies/global"));
 		return data;
 	}
 
@@ -744,8 +762,8 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		}
 
 		add(data, sink, GcpResource.parentToCompute(projectId)); // ".." back to Compute Engine
-		add(data, sink, GcpResource.computeLink(projectId, "Patch", "OS patch management", "compute/patch"));
-		add(data, sink, GcpResource.computeLink(projectId, "OS policies", "OS configuration policies", "compute/config/projects"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Patch", "OS patch management", "compute/patch"));
+		add(data, sink, GcpResource.consoleLink(projectId, "OS policies", "OS configuration policies", "compute/config/projects"));
 		return data;
 	}
 
@@ -759,13 +777,13 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		}
 
 		add(data, sink, GcpResource.parentToCompute(projectId)); // ".." back to Compute Engine
-		add(data, sink, GcpResource.computeLink(projectId, "Servers", "Bare metal servers", "compute/bareMetalSolution/servers"));
-		add(data, sink, GcpResource.computeLink(projectId, "Networks", "Bare metal networks", "compute/bareMetalSolution/networks"));
-		add(data, sink, GcpResource.computeLink(projectId, "VRFs", "Virtual routing and forwarding", "compute/bareMetalSolution/vrfs"));
-		add(data, sink, GcpResource.computeLink(projectId, "Volumes", "Storage volumes", "compute/bareMetalSolution/volumes"));
-		add(data, sink, GcpResource.computeLink(projectId, "NFS shares", "NFS file shares", "compute/bareMetalSolution/nfsShares"));
-		add(data, sink, GcpResource.computeLink(projectId, "Procurements", "Resource procurements", "compute/bareMetalSolution/procurements"));
-		add(data, sink, GcpResource.computeLink(projectId, "Maintenance events", "Scheduled maintenance events", "compute/bareMetalSolution/maintenanceEvents"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Servers", "Bare metal servers", "compute/bareMetalSolution/servers"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Networks", "Bare metal networks", "compute/bareMetalSolution/networks"));
+		add(data, sink, GcpResource.consoleLink(projectId, "VRFs", "Virtual routing and forwarding", "compute/bareMetalSolution/vrfs"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Volumes", "Storage volumes", "compute/bareMetalSolution/volumes"));
+		add(data, sink, GcpResource.consoleLink(projectId, "NFS shares", "NFS file shares", "compute/bareMetalSolution/nfsShares"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Procurements", "Resource procurements", "compute/bareMetalSolution/procurements"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Maintenance events", "Scheduled maintenance events", "compute/bareMetalSolution/maintenanceEvents"));
 		return data;
 	}
 
@@ -779,13 +797,13 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		}
 
 		add(data, sink, GcpResource.parentToCompute(projectId)); // ".." back to Compute Engine
-		add(data, sink, GcpResource.computeLink(projectId, "Rollouts", "Configuration rollouts", "compute/rollouts"));
-		add(data, sink, GcpResource.computeLink(projectId, "Metadata", "Project metadata", "compute/metadata"));
-		add(data, sink, GcpResource.computeLink(projectId, "Zones", "Compute zones", "compute/zones"));
-		add(data, sink, GcpResource.computeLink(projectId, "Network endpoint groups", "Network endpoint groups", "compute/networkendpointgroups/list"));
-		add(data, sink, GcpResource.computeLink(projectId, "Preview features", "Preview features", "compute/previewFeatures"));
-		add(data, sink, GcpResource.computeLink(projectId, "Operations", "Compute operations", "compute/operations"));
-		add(data, sink, GcpResource.computeLink(projectId, "Settings", "Compute Engine settings", "compute/settings"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Rollouts", "Configuration rollouts", "compute/rollouts"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Metadata", "Project metadata", "compute/metadata"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Zones", "Compute zones", "compute/zones"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Network endpoint groups", "Network endpoint groups", "compute/networkendpointgroups/list"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Preview features", "Preview features", "compute/previewFeatures"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Operations", "Compute operations", "compute/operations"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Settings", "Compute Engine settings", "compute/settings"));
 		return data;
 	}
 
@@ -799,10 +817,67 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		}
 
 		add(data, sink, GcpResource.parentToProject(projectId)); // ".." back to the service list
-		add(data, sink, GcpResource.gkeCategory(projectId, null, "Resources management", "Clusters and workloads"));
+		add(data, sink, GcpResource.gkeResourcesManagement(projectId));
 		add(data, sink, GcpResource.gkeCategory(projectId, null, "Posture management", "Security posture and findings"));
 		add(data, sink, GcpResource.gkeCategory(projectId, null, "Networking", "Gateways, services, and ingress"));
 		add(data, sink, GcpResource.gkeCategory(projectId, null, "Features", "GKE features"));
+		return data;
+	}
+
+	/**
+	 * GKE Resources management lists its sections ({@code ..} then each). Clusters is a browsable folder
+	 * (live-fetched on entry); the rest open a Cloud Console page. Workloads is a link (no live fetch yet).
+	 */
+	private NuclrResourceData listGkeResourcesManagement(String projectId, EntrySink sink) {
+
+		var data = new NuclrResourceData();
+		data.setColumnNames(SERVICE_COLUMNS);
+		if (sink != null) {
+			sink.columns(SERVICE_COLUMNS);
+		}
+
+		add(data, sink, GcpResource.parentToGke(projectId)); // ".." back to GKE
+		add(data, sink, GcpResource.consoleLink(projectId, "Overview", "Clusters overview", "kubernetes/list/overview"));
+		add(data, sink, GcpResource.gkeClusters(projectId)); // browsable: live cluster list
+		add(data, sink, GcpResource.consoleLink(projectId, "Workloads", "Deployed workloads", "kubernetes/workload/overview"));
+		add(data, sink, GcpResource.consoleLink(projectId, "AI/ML", "AI/ML on GKE", "kubernetes/aiml/overview"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Teams", "GKE teams", "kubernetes/teams"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Applications", "Deployed applications", "kubernetes/application"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Secrets and ConfigMaps", "Secrets and ConfigMaps", "kubernetes/config"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Storage", "Persistent volume claims", "kubernetes/persistentvolumeclaim"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Object browser", "Kubernetes object browser", "kubernetes/object/browser"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Upgrades", "Cluster upgrades", "kubernetes/upgrades"));
+		add(data, sink, GcpResource.consoleLink(projectId, "Backup for GKE", "Backups for GKE", "kubernetes/backups"));
+		return data;
+	}
+
+	/** The Clusters category lists the project's GKE clusters ({@code ..} then each), each opening its overview page. */
+	private NuclrResourceData listGkeClusters(String projectId, AtomicBoolean cancelled, EntrySink sink) {
+
+		var data = new NuclrResourceData();
+		data.setColumnNames(CLUSTER_COLUMNS);
+		if (sink != null) {
+			sink.columns(CLUSTER_COLUMNS);
+		}
+
+		add(data, sink, GcpResource.parentToGkeResources(projectId)); // ".." back to Resources management
+
+		GkeClusterRepository.Result result = gkeClusterRepository.listClusters(projectId);
+		switch (result) {
+			case GkeClusterRepository.Result.Ok ok -> {
+				for (GkeCluster cluster : ok.clusters()) {
+					if (cancelled != null && cancelled.get()) {
+						break;
+					}
+					add(data, sink, GcpResource.gkeCluster(projectId, cluster));
+				}
+				log.info("GKE cluster listing for {}: {} cluster(s)", projectId, ok.clusters().size());
+			}
+			case GkeClusterRepository.Result.Err err -> {
+				log.warn("GKE cluster list failed for {}: {}", projectId, err.error());
+				GcpErrorDialog.show(err.error());
+			}
+		}
 		return data;
 	}
 
@@ -1451,6 +1526,9 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		}
 		if (GcpResource.isComputeCategory(currentResource)) {
 			return "GCP: " + GcpResource.projectId(currentResource) + " / Compute Engine / " + currentResource.getName();
+		}
+		if (GcpResource.isGkeCategory(currentResource)) {
+			return "GCP: " + GcpResource.projectId(currentResource) + " / GKE / " + currentResource.getName();
 		}
 		if (GcpResource.isService(currentResource)) {
 			return "GCP: " + GcpResource.projectId(currentResource) + " / " + currentResource.getName();

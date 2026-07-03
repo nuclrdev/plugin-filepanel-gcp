@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.UUID;
 
 import dev.nuclr.plugin.core.panel.gcp.gcs.*;
+import dev.nuclr.plugin.core.panel.gcp.gke.*;
 import dev.nuclr.plugin.core.panel.gcp.pubsub.*;
 import dev.nuclr.plugin.core.panel.gcp.secret.*;
 import dev.nuclr.platform.plugin.NuclrResource;
@@ -59,7 +60,7 @@ public final class GcpResource extends NuclrResource {
 	static final String KIND_PUBSUB_SUBSCRIPTION = "pubsub-subscription";
 	static final String KIND_SECRET = "secret";
 	static final String KIND_COMPUTE_CATEGORY = "compute-category";
-	static final String KIND_COMPUTE_LINK = "compute-link";
+	static final String KIND_CONSOLE_LINK = "console-link";
 	static final String KIND_GKE_CATEGORY = "gke-category";
 
 	/** Metadata key holding a secret's short id (on secret resources), for the Console URL. */
@@ -82,11 +83,14 @@ public final class GcpResource extends NuclrResource {
 	static final String COMPUTE_BARE_METAL = "bare-metal";
 	static final String COMPUTE_SETTINGS = "settings";
 
-	/** Metadata key holding the Cloud Console URL a {@link #KIND_COMPUTE_LINK} entry opens when activated. */
-	static final String COMPUTE_URL = "nuclr.gcp.compute.url";
+	/** Metadata key holding the Cloud Console URL a {@link #KIND_CONSOLE_LINK} entry opens when activated. */
+	static final String CONSOLE_URL = "nuclr.gcp.console.url";
 
 	/** Metadata key identifying which browsable GKE category a {@link #KIND_GKE_CATEGORY} node is. */
 	static final String GKE_CATEGORY = "nuclr.gcp.gke.category";
+
+	static final String GKE_RESOURCES = "resources";
+	static final String GKE_CLUSTERS = "clusters";
 
 	/** Metadata on a search-results root: the hit list, the panel title, and the origin folder. */
 	private static final String SEARCH_HITS = "nuclr.gcp.search.hits";
@@ -291,6 +295,52 @@ public final class GcpResource extends NuclrResource {
 		return r;
 	}
 
+	/** The Resources management category (browsable) under a project's GKE service. */
+	static GcpResource gkeResourcesManagement(String projectId) {
+		return gkeCategory(projectId, GKE_RESOURCES, "Resources management", "Clusters and workloads");
+	}
+
+	/** The Clusters category (browsable, live-fetched) under GKE Resources management. */
+	static GcpResource gkeClusters(String projectId) {
+		return gkeCategory(projectId, GKE_CLUSTERS, "Clusters", "GKE clusters");
+	}
+
+	/** The synthetic ".." entry that navigates from a GKE category back to the GKE service. */
+	static GcpResource parentToGke(String projectId) {
+		GcpResource r = gkeService(projectId);
+		r.rename("..");
+		return r;
+	}
+
+	/** The synthetic ".." entry that navigates from a GKE sub-section (e.g. Clusters) back to Resources management. */
+	static GcpResource parentToGkeResources(String projectId) {
+		GcpResource r = gkeResourcesManagement(projectId);
+		r.rename("..");
+		return r;
+	}
+
+	/** A GKE cluster entry (leaf); activating it opens the cluster's overview page in the Cloud Console. */
+	static GcpResource gkeCluster(String projectId, GkeCluster cluster) {
+		String path = "kubernetes/clusters/details/" + cluster.location() + "/" + cluster.name() + "/overview";
+		GcpResource r = consoleLinkTo(projectId, cluster.name(), null, buildConsoleUrl(projectId, path));
+		r.getMetadata().put("Location", cluster.location());
+		r.getMetadata().put("Status", cluster.status());
+		r.getMetadata().put("Version", cluster.version());
+		r.getMetadata().put("Nodes", cluster.nodes());
+		return r;
+	}
+
+	/** A browsable GKE category node (carries a {@link #GKE_CATEGORY} id), e.g. Resources management, Clusters. */
+	static boolean isGkeCategory(NuclrResource resource) {
+		return resource != null && KIND_GKE_CATEGORY.equals(resource.getMetadata().get(KIND))
+				&& resource.getMetadata().get(GKE_CATEGORY) != null;
+	}
+
+	/** The GKE category id ({@link #GKE_RESOURCES} / {@link #GKE_CLUSTERS}) of a browsable category node, or {@code null}. */
+	static String gkeCategory(NuclrResource resource) {
+		return metaString(resource, GKE_CATEGORY);
+	}
+
 	/** The synthetic ".." entry that navigates from a Compute Engine category back to the Compute Engine service. */
 	static GcpResource parentToCompute(String projectId) {
 		GcpResource r = computeEngineService(projectId);
@@ -299,28 +349,36 @@ public final class GcpResource extends NuclrResource {
 	}
 
 	/**
-	 * A Compute Engine "link" entry (leaf) shown under a browsable compute category (e.g. VM Instances
-	 * under Virtual Machines). It is not navigable; activating it opens the Cloud Console page at
+	 * A "console link" entry (leaf) shown under a browsable category (e.g. VM Instances under Virtual
+	 * Machines, or a GKE section). It is not navigable; activating it opens the Cloud Console page at
 	 * {@code consolePath} (scoped to {@code projectId}) in the default browser.
 	 */
-	static GcpResource computeLink(String projectId, String displayName, String description, String consolePath) {
+	static GcpResource consoleLink(String projectId, String displayName, String description, String consolePath) {
+		return consoleLinkTo(projectId, displayName, description, buildConsoleUrl(projectId, consolePath));
+	}
+
+	/**
+	 * A "console link" leaf carrying an already-built {@code url} (used when the URL cannot be expressed
+	 * as a simple {@code consolePath}, e.g. a live-fetched GKE cluster's detail page).
+	 */
+	static GcpResource consoleLinkTo(String projectId, String displayName, String description, String url) {
 		GcpResource r = new GcpResource();
-		r.setUuid(ROOT_UUID + "project/" + projectId + "/compute/link/" + displayName);
+		r.setUuid(ROOT_UUID + "link/" + projectId + "/" + url);
 		r.setFullPath(r.getUuid());
 		r.setFolder(false);
-		r.getMetadata().put(KIND, KIND_COMPUTE_LINK);
+		r.getMetadata().put(KIND, KIND_CONSOLE_LINK);
 		r.getMetadata().put(PROJECT_ID, projectId);
 		r.rename(displayName);
 		r.getMetadata().put("Description", description);
-		r.getMetadata().put(COMPUTE_URL, computeConsoleUrl(projectId, consolePath));
+		r.getMetadata().put(CONSOLE_URL, url);
 		return r;
 	}
 
 	/**
-	 * Build {@code https://console.cloud.google.com/<consolePath>?project=<projectId>} for a compute-link
+	 * Build {@code https://console.cloud.google.com/<consolePath>?project=<projectId>} for a console-link
 	 * entry, joining with {@code &} instead when {@code consolePath} already carries a query string.
 	 */
-	private static String computeConsoleUrl(String projectId, String consolePath) {
+	static String buildConsoleUrl(String projectId, String consolePath) {
 		var url = new StringBuilder("https://console.cloud.google.com/").append(consolePath);
 		if (projectId != null && !projectId.isBlank()) {
 			url.append(consolePath.indexOf('?') < 0 ? '?' : '&')
@@ -752,17 +810,17 @@ public final class GcpResource extends NuclrResource {
 	}
 
 	/**
-	 * The Cloud Console URL a compute-link entry (e.g. VM Instances) opens when activated, stored on the
-	 * resource at creation, or {@code null} if the resource is not a compute link.
+	 * The Cloud Console URL a console-link entry (e.g. VM Instances, a GKE cluster) opens when activated,
+	 * stored on the resource at creation, or {@code null} if the resource is not a console link.
 	 */
-	static String computeLinkConsoleUrl(NuclrResource resource) {
-		if (resource == null || !KIND_COMPUTE_LINK.equals(resource.getMetadata().get(KIND))) {
+	static String consoleLinkUrl(NuclrResource resource) {
+		if (resource == null || !KIND_CONSOLE_LINK.equals(resource.getMetadata().get(KIND))) {
 			return null;
 		}
-		return metaString(resource, COMPUTE_URL);
+		return metaString(resource, CONSOLE_URL);
 	}
 
-	/** The Cloud Console URL for whichever activatable resource this is (object, secret, topic, subscription, compute link), or {@code null}. */
+	/** The Cloud Console URL for whichever activatable resource this is (object, secret, topic, subscription, console link), or {@code null}. */
 	static String consoleUrl(NuclrResource resource) {
 		String url = objectConsoleUrl(resource);
 		if (url == null) {
@@ -775,7 +833,7 @@ public final class GcpResource extends NuclrResource {
 			url = subscriptionConsoleUrl(resource);
 		}
 		if (url == null) {
-			url = computeLinkConsoleUrl(resource);
+			url = consoleLinkUrl(resource);
 		}
 		return url;
 	}
