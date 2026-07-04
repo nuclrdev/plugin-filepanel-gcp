@@ -1448,7 +1448,13 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			String projectId = GcpResource.projectId(currentResource);
 			workloadCache.remove(projectId);
 			GcpDiskCache.clearWorkloads(projectId);
-			log.info("GKE workload listing for {} invalidated on '{}'", projectId, actionType);
+			// Workloads are derived from the cluster list (one get-credentials per cluster), so a stale
+			// cluster list breaks the re-fetch: a cluster that has since been deleted makes
+			// get-credentials 404 and every cluster fail, leaving the panel blank instead of reloading.
+			// Drop the cached clusters too so the reload rebuilds them live and reflects reality.
+			clusterCache.remove(projectId);
+			GcpDiskCache.clearClusters(projectId);
+			log.info("GKE workload listing for {} invalidated on '{}' (cluster list dropped too)", projectId, actionType);
 		} else if (GcpResource.isRoot(currentResource)) {
 			cachedProjects = null;
 			GcpDiskCache.clearProjects();
