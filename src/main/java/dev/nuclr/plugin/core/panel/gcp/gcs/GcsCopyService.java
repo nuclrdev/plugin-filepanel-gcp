@@ -214,7 +214,14 @@ public final class GcsCopyService {
             NuclrResource currentResource, NuclrPluginContext context, String destUuid,
             Map<String, NuclrResource> existingByName) {
 
+        log.info("GCS accept-copy requested: current={}, selected={}, focused={}, existing={}",
+                currentResource,
+                selectedResources == null ? 0 : selectedResources.size(),
+                describeResource(focusedResource),
+                existingByName == null ? 0 : existingByName.size());
+
         if (!GcpResource.isBucket(currentResource) && !GcpResource.isObjectDir(currentResource)) {
+            log.warn("GCS accept-copy rejected: destination is not a bucket or object folder: {}", currentResource);
             showError("Open a bucket to copy files into it.");
             return;
         }
@@ -223,16 +230,22 @@ public final class GcsCopyService {
 
         List<NuclrResource> sources = collectFiles(selectedResources, focusedResource);
         if (sources.isEmpty()) {
+            log.warn("GCS accept-copy rejected: no uploadable files from selected={}, focused={}",
+                    describeResources(selectedResources), describeResource(focusedResource));
             showError("Nothing to copy here (folders are not uploaded).");
             return;
         }
+        log.info("GCS accept-copy sources for gs://{}/{}: {}", bucket, prefix, describeResources(sources));
 
         GcsCopyDialog.Upload options = GcsCopyDialog.showUpload(header(sources), "gs://" + bucket + "/" + prefix);
         if (options == null) {
+            log.info("GCS accept-copy cancelled at setup dialog for gs://{}/{}", bucket, prefix);
             return; // cancelled at the setup dialog
         }
 
         Map<String, NuclrResource> existing = existingByName != null ? existingByName : Map.of();
+        log.info("GCS upload starting: {} source(s) -> gs://{}/{} (existing entries={})",
+                sources.size(), bucket, prefix, existing.size());
         var failures = new ArrayList<String>();
         int[] uploaded = { 0 };
         GcsProgressDialog.run("Copy", callback ->
@@ -429,6 +442,34 @@ public final class GcsCopyService {
     /** Short description of the copy set for the setup dialog: the single name, or "N items". */
     private static String header(List<NuclrResource> objects) {
         return objects.size() == 1 ? objects.get(0).getName() : objects.size() + " items";
+    }
+
+    private static String describeResources(List<NuclrResource> resources) {
+        if (resources == null || resources.isEmpty()) {
+            return "[]";
+        }
+        int limit = Math.min(resources.size(), 5);
+        StringBuilder text = new StringBuilder("[");
+        for (int i = 0; i < limit; i++) {
+            if (i > 0) {
+                text.append(", ");
+            }
+            text.append(describeResource(resources.get(i)));
+        }
+        if (resources.size() > limit) {
+            text.append(", +").append(resources.size() - limit).append(" more");
+        }
+        return text.append(']').toString();
+    }
+
+    private static String describeResource(NuclrResource resource) {
+        if (resource == null) {
+            return "null";
+        }
+        String name = resource.getName() != null ? resource.getName() : resource.getUuid();
+        Path path = resource.getPath();
+        String location = path != null ? path.toString() : resource.getFullPath();
+        return location == null || location.equals(name) ? String.valueOf(name) : name + " [" + location + "]";
     }
 
     private static String metaText(NuclrResource resource, String key) {

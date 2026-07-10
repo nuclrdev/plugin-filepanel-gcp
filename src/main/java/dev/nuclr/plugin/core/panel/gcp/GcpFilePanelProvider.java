@@ -206,7 +206,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	private final Map<String, List<GkeWorkload>> workloadCache = new ConcurrentHashMap<>();
 
 	// Active object listing: a live, lazily-consumed gcloud stream plus the rows shown so far.
-	// One listing is active at a time; navigating away closes the pager (see openResource).
+	// One live stream is active at a time; completed rows stay available for duplicate checks.
 	private GcsObjectPager pager;
 	private String pagerKey;
 	private final List<NuclrResource> pagerRows = new ArrayList<>();
@@ -315,6 +315,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		clusterCache.clear();
 		workloadCache.clear();
 		closePager();
+		clearObjectListing();
 		GcsTempFiles.cleanup();
 		GcsEndpoints.clear();
 		log.info("GCP file panel plugin unloaded");
@@ -381,6 +382,18 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	 */
 	@Override
 	public List<NuclrMenuResource> menuItems(NuclrResource resource) {
+		// Every GCP view is a listing of named resources (the "Name" column is present in all of them),
+		// so offer name sorting everywhere via the host's plugin-declared sort mechanism. Size/date
+		// sorts are intentionally not offered: GCP resources carry no real length or timestamps
+		// (dates are stubbed to EPOCH), so those criteria would sort nothing.
+		List<NuclrMenuResource> items = new ArrayList<>(viewMenuItems());
+		items.add(new NuclrMenuResource("Name", "Ctrl+F3", "filepanel.sort:name:Name"));
+		items.add(new NuclrMenuResource("Sort", "Ctrl+F12", "filepanel.sort:dialog"));
+		return items;
+	}
+
+	/** The view-specific (non-sort) function-bar entries for the currently open GCP resource. */
+	private List<NuclrMenuResource> viewMenuItems() {
 		if (GcpResource.isRoot(currentResource)) {
 			return List.of(
 					new NuclrMenuResource("View Resources", "F3", ACTION_VIEW_RESOURCES),
@@ -441,6 +454,9 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		// release its held gcloud process before opening something else.
 		if (!GcpResource.isLoadMore(resourceToOpen)) {
 			closePager();
+			if (!GcpResource.isBucket(resourceToOpen) && !GcpResource.isObjectDir(resourceToOpen)) {
+				clearObjectListing();
+			}
 		}
 
 		if (GcpResource.isSearchResults(resourceToOpen)) {
@@ -1117,8 +1133,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		warmGcs(bucket);
 
 		// Row 0 is always ".." (up one prefix level, or back to the bucket list at the root).
-		pagerRows.clear();
-		pagerObjects.clear();
+		clearObjectListing();
 		NuclrResource parent = GcpResource.objectParent(projectId, bucket, prefix);
 		pagerRows.add(parent);
 		add(data, sink, parent);
@@ -1200,7 +1215,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		} else {
 			// Listing complete: persist the full child set for instant re-open, then free the process.
 			GcpDiskCache.saveObjects(bucket, prefix, List.copyOf(pagerObjects));
-			closePager(); // rows already rendered
+			closePager(); // keep rows for upload conflict checks
 		}
 		log.info("GCS object listing gs://{}/{}: +{} row(s) in {} ms, more={}",
 				bucket, prefix, page.size(), pageMs, pager != null && pager.hasMore());
@@ -1222,19 +1237,23 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		return data;
 	}
 
-	/** Closes the live object stream (if any) and forgets the accumulated rows. */
+	/** Closes the live object stream (if any), keeping the rendered rows for current-listing actions. */
 	private void closePager() {
 		if (pager != null) {
 			pager.close();
 			pager = null;
 		}
 		pagerKey = null;
+	}
+
+	/** Forget the rows/models from the previous object listing. */
+	private void clearObjectListing() {
 		pagerRows.clear();
 		pagerObjects.clear();
 	}
 
 	private static String pagerKey(String bucket, String prefix) {
-		return bucket + ' ' + prefix;
+		return bucket.length() + ":" + bucket + prefix;
 	}
 
 	/** Off-thread, prime the access token and a TLS connection so the first quick view is warm. */
@@ -1365,6 +1384,8 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		}
 
 		if (ACTION_ACCEPT_COPY.equals(actionType)) {
+			log.info("GCP accept-copy action: current={}, selected={}, focused={}",
+					currentResource, selectedResources == null ? 0 : selectedResources.size(), focusedResource);
 			new GcsCopyService().acceptCopy(
 					selectedResources, focusedResource, currentResource, context, uuid, currentListingByName());
 			return;
@@ -1430,6 +1451,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			String prefix = GcpResource.objectPrefix(currentResource);
 			GcpDiskCache.clearObjects(bucket, prefix);
 			closePager(); // drop any live stream for this listing so the reload re-fetches it
+			clearObjectListing();
 			log.info("GCP object listing gs://{}/{} invalidated on '{}'", bucket, prefix, actionType);
 		} else if (GcpResource.isService(currentResource)
 				&& GcpResource.SERVICE_GCS.equals(GcpResource.serviceType(currentResource))) {
