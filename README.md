@@ -12,14 +12,17 @@ delegated to the active `gcloud` account.
 | Feature | Details |
 |---|---|
 | 🗂️ Project browser | Lists projects visible to the current `gcloud` account |
-| 🧩 Service browser | Shows Cloud Storage, Pub/Sub, and Secret Manager under each project |
-| 🪣 Cloud Storage | Lists buckets, folders, and objects with paged loading for large prefixes |
-| 📥 GCS copy | Copies GCS objects to a local folder and accepts incoming file copies as uploads |
-| 🛠️ GCS actions | Supports make folder, delete, find by name, quick view, and Console object pages |
+| 🧩 Service browser | Shows Cloud Storage, Pub/Sub, Compute Engine, GKE, and Secret Manager under each project |
+| 🪣 Cloud Storage | Lists buckets, folders, and objects with paged loading (a trailing `Load more…` row) for large prefixes |
+| 📥 GCS copy | Copies GCS objects to a local folder and accepts incoming file copies as uploads, with conflict and progress dialogs |
+| 🛠️ GCS actions | Make folder (F7), delete (F8), find by name (Alt+F7), copy (F5), quick view, and Console object pages |
 | 📨 Pub/Sub | Lists topics and subscriptions and opens their Console detail pages |
 | 🔑 Secret Manager | Lists secrets and opens their Console versions pages |
+| 🖥️ Compute Engine | Section shortcuts: VMs, storage, instance groups, extension/VM manager, Bare Metal Solution, settings |
+| ☸️ GKE | Lists clusters and workloads via `kubectl`, plus Console shortcuts for AI/ML, Teams, Backup for GKE and the rest of Resources management |
+| ⚡ Streaming listings | Entries are published to the panel as they arrive, so large listings paint incrementally |
 | 🌐 Console shortcuts | Opens Console pages for resource manager and create project/bucket/secret/topic |
-| 💽 Disk cache | Persists project, bucket, and complete object listings under the temp directory |
+| 💽 Disk cache | Persists project, bucket, cluster, workload, and complete object listings under the temp directory |
 
 ## 📋 Prerequisites
 
@@ -30,7 +33,8 @@ gcloud auth login
 ```
 
 The active account must have permission to list the resources you want to
-browse.
+browse. Browsing GKE workloads additionally requires `kubectl` on the `PATH`
+(the plugin calls it against the cluster's credentials).
 
 ## 🧭 Navigation
 
@@ -43,6 +47,15 @@ GCP
     Pub/Sub
       Topics
       Subscriptions
+    Compute Engine
+      VMs · Storage · Instance groups · VM manager · …
+    GKE
+      Resources management
+        Clusters
+          <cluster>
+        Workloads
+          <workload>
+      Features
     Secret Manager
       <secret>
 ```
@@ -83,8 +96,10 @@ src/main/java/dev/nuclr/plugin/core/panel/gcp/
   GcloudCli.java                  gcloud executable and command helpers
   GcpDiskCache.java               restart-persistent listing cache
   GcpError*.java                  error classification and dialogs
-  gcs/                            Cloud Storage listing, copy, upload, delete, find
+  GcpProject*.java                project model, gcloud output parsing, repository
+  gcs/                            Cloud Storage listing, paging, copy, upload, delete, find
   pubsub/                         Pub/Sub topic/subscription listing
+  gke/                            GKE clusters and workloads (gcloud + kubectl)
   secret/                         Secret Manager listing
 ```
 
