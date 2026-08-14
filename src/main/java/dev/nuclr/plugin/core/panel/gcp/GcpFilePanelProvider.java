@@ -18,7 +18,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -53,16 +52,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
-	public static final String PluginId = "dev.nuclr.plugin.core.panel.gcp";
 
-	private static final String PluginName = "Google Cloud Platform Panel";
-	private static final String PluginVersion = loadVersion();
-	private static final String PluginDescription =
-			"Lists GCP projects accessible to the current gcloud account as a navigable panel.";
-	private static final String PluginAuthor = "Nuclr Development Team";
-	private static final String PluginLicense = "Apache-2.0";
-	private static final String PluginWebsite = "https://nuclr.dev";
-	private static final String PluginPageUrl = "https://nuclr.dev/plugins/core/filepanel-gcp.html";
 
 	/** Columns shown for the project listing (cells read from each resource's metadata). */
 	private static final List<String> PROJECT_COLUMNS = List.of("Name", "Project Name", "Number", "State");
@@ -218,72 +208,10 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	// Plugin metadata
 	// -------------------------------------------------------------------------
 
-	@Override
-	public String id() {
-		return PluginId;
-	}
-
-	@Override
-	public String name() {
-		return PluginName;
-	}
-
-	@Override
-	public String version() {
-		return PluginVersion;
-	}
-
-	@Override
-	public String description() {
-		return PluginDescription;
-	}
-
-	@Override
-	public String author() {
-		return PluginAuthor;
-	}
-
-	@Override
-	public String license() {
-		return PluginLicense;
-	}
-
-	@Override
-	public String website() {
-		return PluginWebsite;
-	}
-
-	@Override
-	public String pageUrl() {
-		return PluginPageUrl;
-	}
-
-	@Override
-	public String docUrl() {
-		return PluginPageUrl;
-	}
-
-	@Override
-	public Developer developer() {
-		return Developer.Official;
-	}
 
 	@Override
 	public String uuid() {
 		return uuid;
-	}
-
-	private static String loadVersion() {
-		try (var stream = GcpFilePanelProvider.class.getResourceAsStream("/plugin.properties")) {
-			if (stream == null) {
-				return "unknown";
-			}
-			var props = new Properties();
-			props.load(stream);
-			return props.getProperty("version", "unknown");
-		} catch (IOException e) {
-			return "unknown";
-		}
 	}
 
 	// -------------------------------------------------------------------------
@@ -1709,4 +1637,5 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		}
 		return selectedResources.size() + " items selected";
 	}
+
 }

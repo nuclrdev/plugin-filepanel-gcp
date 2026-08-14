@@ -11,11 +11,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * A lazily-consumed listing of one Cloud Storage "directory".
@@ -33,7 +33,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public final class GcsObjectPager implements AutoCloseable {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final JsonFactory FACTORY = MAPPER.getFactory();
 
     /** Carries a classified {@link GcpError} when a listing cannot be started. */
     public static final class GcsListException extends Exception {
@@ -87,9 +86,9 @@ public final class GcsObjectPager implements AutoCloseable {
         JsonToken first;
         JsonParser parser;
         try {
-            parser = FACTORY.createParser(process.getInputStream());
+			parser = MAPPER.createParser(process.getInputStream());
             first = parser.nextToken();
-        } catch (IOException e) {
+		} catch (JacksonException e) {
             first = null;
             parser = null;
         }
@@ -143,7 +142,7 @@ public final class GcsObjectPager implements AutoCloseable {
                     }
                 }
             }
-        } catch (IOException e) {
+		} catch (JacksonException e) {
             exhausted = true; // stream broke; stop cleanly
         }
         return page;
@@ -167,7 +166,7 @@ public final class GcsObjectPager implements AutoCloseable {
         if (parser != null) {
             try {
                 parser.close();
-            } catch (IOException ignored) {
+			} catch (JacksonException ignored) {
             }
         }
     }

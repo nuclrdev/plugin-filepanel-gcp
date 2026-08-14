@@ -5,7 +5,7 @@ import dev.nuclr.plugin.core.panel.gcp.*;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 /**
  * Maps a single array element of {@code gcloud storage ls --json} output to a {@link GcsObject}.

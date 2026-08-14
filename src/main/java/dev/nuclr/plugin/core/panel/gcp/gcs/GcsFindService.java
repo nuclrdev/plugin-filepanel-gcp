@@ -15,11 +15,10 @@ import java.util.regex.Pattern;
 
 import javax.swing.SwingUtilities;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import dev.nuclr.platform.plugin.NuclrResource;
 import lombok.extern.slf4j.Slf4j;
@@ -36,7 +35,6 @@ import lombok.extern.slf4j.Slf4j;
 public final class GcsFindService {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final JsonFactory FACTORY = MAPPER.getFactory();
     private static final DateTimeFormatter DISPLAY_TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /** Receives search results; every callback is delivered on the EDT. */
@@ -98,7 +96,7 @@ public final class GcsFindService {
             Process finalProcess = process;
             Thread.ofVirtual().start(() -> drain(finalProcess));
 
-            try (JsonParser parser = FACTORY.createParser(process.getInputStream())) {
+			try (JsonParser parser = MAPPER.createParser(process.getInputStream())) {
                 if (parser.nextToken() == JsonToken.START_ARRAY) {
                     stream(parser, request, glob, scanned, matched, listener, handle);
                 }
