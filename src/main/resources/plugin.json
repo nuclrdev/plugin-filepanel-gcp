@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "version": "${project.version}",
-  "platformSdkVersion": "4.0.0",
+  "platformSdkVersion": "${platform.sdk.version}",
 	"plugins": [
 		{
 			"class": "dev.nuclr.plugin.core.panel.gcp.GcpFilePanelProvider",
