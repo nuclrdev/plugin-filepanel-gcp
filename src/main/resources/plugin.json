@@ -13,8 +13,8 @@
 			"author": "Nuclr Development Team",
 			"license": "Apache-2.0",
 			"website": "https://nuclr.dev",
-			"pageUrl": "https://nuclr.dev/plugins/core/filepanel-gcp.html",
-			"docUrl": "https://nuclr.dev/plugins/core/filepanel-gcp.html",
+			"pageUrl": "https://github.com/nuclrdev/plugin-filepanel-gcp",
+			"docUrl": "https://github.com/nuclrdev/plugin-filepanel-gcp",
 			"developer": "Official",
 			"singleton": true
 		}
