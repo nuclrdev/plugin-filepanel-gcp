@@ -1,5 +1,7 @@
 package dev.nuclr.plugin.core.panel.gcp.gcs;
 
+import static dev.nuclr.plugin.core.panel.gcp.Messages.tr;
+
 import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.awt.BorderLayout;
@@ -37,8 +39,6 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 final class GcsCopyDialog {
 
-    private static final String TITLE = "Copy";
-
     /** How an already-existing target is resolved: {@code null} action means "Ask" (prompt per clash). */
     record Options(Path destination, Action existing) {}
 
@@ -65,23 +65,24 @@ final class GcsCopyDialog {
     private static Upload buildUpload(String header, String destinationLabel) {
 
         Window owner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow();
-        JDialog dialog = new JDialog(owner, TITLE, JDialog.ModalityType.APPLICATION_MODAL);
+        JDialog dialog = new JDialog(owner, tr("copy.title"), JDialog.ModalityType.APPLICATION_MODAL);
         dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
 
         JTextField destField = new JTextField(destinationLabel, 40);
         destField.setEditable(false);
         JPanel destPanel = new JPanel(new BorderLayout(0, 4));
-        destPanel.add(new JLabel("Copy " + header + " to:"), BorderLayout.NORTH);
+        destPanel.add(new JLabel(tr("copy.to", header)), BorderLayout.NORTH);
         destPanel.add(destField, BorderLayout.CENTER);
 
         JComboBox<String> existing = new JComboBox<>(new String[] {
-                "Ask", "Overwrite", "Skip", "Rename", "Append" });
+                tr("copy.existing.ask"), tr("copy.existing.overwrite"), tr("copy.existing.skip"),
+                tr("copy.existing.rename"), tr("copy.existing.append") });
         JPanel existingRow = new JPanel(new BorderLayout(8, 0));
-        existingRow.add(new JLabel("Already existing files:"), BorderLayout.WEST);
+        existingRow.add(new JLabel(tr("copy.existing.label")), BorderLayout.WEST);
         existingRow.add(existing, BorderLayout.CENTER);
 
-        JButton copyButton = new JButton("Copy");
-        JButton cancelButton = new JButton("Cancel");
+        JButton copyButton = new JButton(tr("copy.button"));
+        JButton cancelButton = new JButton(tr("common.cancel"));
         final Upload[] chosen = new Upload[1];
 
         copyButton.addActionListener(e -> {
@@ -134,22 +135,23 @@ final class GcsCopyDialog {
     private static Options build(String header, Path defaultTarget) {
 
         Window owner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow();
-        JDialog dialog = new JDialog(owner, TITLE, JDialog.ModalityType.APPLICATION_MODAL);
+        JDialog dialog = new JDialog(owner, tr("copy.title"), JDialog.ModalityType.APPLICATION_MODAL);
         dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
 
         JTextField destField = new JTextField(defaultTarget != null ? defaultTarget.toString() : "", 40);
         JPanel destPanel = new JPanel(new BorderLayout(0, 4));
-        destPanel.add(new JLabel("Copy " + header + " to:"), BorderLayout.NORTH);
+        destPanel.add(new JLabel(tr("copy.to", header)), BorderLayout.NORTH);
         destPanel.add(destField, BorderLayout.CENTER);
 
         JComboBox<String> existing = new JComboBox<>(new String[] {
-                "Ask", "Overwrite", "Skip", "Rename", "Append" });
+                tr("copy.existing.ask"), tr("copy.existing.overwrite"), tr("copy.existing.skip"),
+                tr("copy.existing.rename"), tr("copy.existing.append") });
         JPanel existingRow = new JPanel(new BorderLayout(8, 0));
-        existingRow.add(new JLabel("Already existing files:"), BorderLayout.WEST);
+        existingRow.add(new JLabel(tr("copy.existing.label")), BorderLayout.WEST);
         existingRow.add(existing, BorderLayout.CENTER);
 
-        JButton copyButton = new JButton("Copy");
-        JButton cancelButton = new JButton("Cancel");
+        JButton copyButton = new JButton(tr("copy.button"));
+        JButton cancelButton = new JButton(tr("common.cancel"));
 
         final Options[] chosen = new Options[1];
 

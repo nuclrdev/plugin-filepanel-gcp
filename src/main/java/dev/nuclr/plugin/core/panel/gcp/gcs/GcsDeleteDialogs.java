@@ -1,5 +1,7 @@
 package dev.nuclr.plugin.core.panel.gcp.gcs;
 
+import static dev.nuclr.plugin.core.panel.gcp.Messages.tr;
+
 import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.awt.BorderLayout;
@@ -35,8 +37,6 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 final class GcsDeleteDialogs {
 
-    private static final String TITLE = "Delete";
-
     private GcsDeleteDialogs() {
     }
 
@@ -44,7 +44,7 @@ final class GcsDeleteDialogs {
     static boolean confirmDelete(List<NuclrResource> sources) {
 
         boolean single = sources.size() <= 1;
-        String header = single ? "Do you wish to delete the object?" : "Do you wish to delete the objects?";
+        String header = single ? tr("delete.confirm.one") : tr("delete.confirm.many");
 
         StringBuilder sb = new StringBuilder(header).append('\n');
         for (NuclrResource r : sources) {
@@ -52,7 +52,7 @@ final class GcsDeleteDialogs {
         }
 
         Component message = buildText(sb.toString().stripTrailing(), !single);
-        return choose(TITLE, message, "OK", "Cancel");
+        return choose(tr("delete.title"), message, tr("common.ok"), tr("common.cancel"));
     }
 
     private static String fullPath(NuclrResource r) {
@@ -64,9 +64,9 @@ final class GcsDeleteDialogs {
 
     /** @return true to Skip (continue with the next item), false to Abort the operation. */
     static boolean error(String name, GcpError error) {
-        String detail = error == null ? "Could not delete the object." : String.valueOf(error);
-        Component message = buildText("Failed to delete:\n" + name + "\n\n" + detail, false);
-        return choose(TITLE, message, "Skip", "Abort");
+        String detail = error == null ? tr("delete.error.unknown") : String.valueOf(error);
+        Component message = buildText(tr("delete.error.message", name, detail), false);
+        return choose(tr("delete.title"), message, tr("common.skip"), tr("delete.abort"));
     }
 
     private static Component buildText(String text, boolean scroll) {

@@ -1,5 +1,7 @@
 package dev.nuclr.plugin.core.panel.gcp.gcs;
 
+import static dev.nuclr.plugin.core.panel.gcp.Messages.tr;
+
 import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.awt.BorderLayout;
@@ -33,8 +35,6 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public final class GcsFindDialog {
 
-    private static final String TITLE = "Find files";
-
     private GcsFindDialog() {
     }
 
@@ -48,25 +48,25 @@ public final class GcsFindDialog {
     private static GcsFindRequest build(String projectId, String bucket, String prefix) {
 
         Window owner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow();
-        JDialog dialog = new JDialog(owner, TITLE, JDialog.ModalityType.APPLICATION_MODAL);
+        JDialog dialog = new JDialog(owner, tr("find.title"), JDialog.ModalityType.APPLICATION_MODAL);
         dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
 
         JTextField patternField = new JTextField("*", 30);
         JPanel patternPanel = new JPanel(new BorderLayout(0, 4));
-        patternPanel.add(new JLabel("File name (wildcards * and ?):"), BorderLayout.NORTH);
+        patternPanel.add(new JLabel(tr("find.pattern")), BorderLayout.NORTH);
         patternPanel.add(patternField, BorderLayout.CENTER);
 
         JTextField locationField = new JTextField("gs://" + bucket + "/" + prefix, 30);
         locationField.setEditable(false);
         JPanel locationPanel = new JPanel(new BorderLayout(0, 4));
-        locationPanel.add(new JLabel("Search in:"), BorderLayout.NORTH);
+        locationPanel.add(new JLabel(tr("find.search.in")), BorderLayout.NORTH);
         locationPanel.add(locationField, BorderLayout.CENTER);
 
-        JCheckBox recursive = new JCheckBox("Search sub-folders (recursive)", true);
-        JCheckBox caseSensitive = new JCheckBox("Case sensitive", false);
+        JCheckBox recursive = new JCheckBox(tr("find.recursive"), true);
+        JCheckBox caseSensitive = new JCheckBox(tr("find.case.sensitive"), false);
 
-        JButton searchButton = new JButton("Search");
-        JButton cancelButton = new JButton("Cancel");
+        JButton searchButton = new JButton(tr("find.search"));
+        JButton cancelButton = new JButton(tr("common.cancel"));
         final GcsFindRequest[] chosen = new GcsFindRequest[1];
 
         searchButton.addActionListener(e -> {

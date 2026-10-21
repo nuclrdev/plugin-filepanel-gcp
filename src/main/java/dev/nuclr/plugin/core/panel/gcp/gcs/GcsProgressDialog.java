@@ -1,5 +1,7 @@
 package dev.nuclr.plugin.core.panel.gcp.gcs;
 
+import static dev.nuclr.plugin.core.panel.gcp.Messages.tr;
+
 import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.awt.BorderLayout;
@@ -46,10 +48,10 @@ final class GcsProgressDialog {
 
         Window owner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow();
 
-        JLabel itemLabel = new JLabel("Preparing…");
+        JLabel itemLabel = new JLabel(tr("progress.preparing"));
         JProgressBar bar = new JProgressBar(0, 100);
         bar.setStringPainted(true);
-        JButton cancelButton = new JButton("Cancel");
+        JButton cancelButton = new JButton(tr("common.cancel"));
 
         JDialog dialog = new JDialog(owner, title, JDialog.ModalityType.APPLICATION_MODAL);
         dialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
@@ -77,7 +79,7 @@ final class GcsProgressDialog {
         cancelButton.addActionListener(e -> {
             cancelled.set(true);
             cancelButton.setEnabled(false);
-            itemLabel.setText("Cancelling…");
+            itemLabel.setText(tr("progress.cancelling"));
         });
 
         NuclrPluginCallback callback = new NuclrPluginCallback() {

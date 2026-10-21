@@ -1,5 +1,7 @@
 package dev.nuclr.plugin.core.panel.gcp.gcs;
 
+import static dev.nuclr.plugin.core.panel.gcp.Messages.tr;
+
 import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.util.ArrayList;
@@ -33,8 +35,8 @@ public final class GcsDeleteService {
         List<NuclrResource> objects = collectObjects(selectedResources, focusedResource);
         if (objects.isEmpty()) {
             SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(null,
-                    "Select one or more objects to delete (folders are not deleted).",
-                    "Delete", JOptionPane.INFORMATION_MESSAGE));
+                    tr("delete.select.objects"),
+                    tr("delete.title"), JOptionPane.INFORMATION_MESSAGE));
             return 0;
         }
 
@@ -43,7 +45,7 @@ public final class GcsDeleteService {
         }
 
         int[] deleted = { 0 };
-        GcsProgressDialog.run("Delete", callback -> deleted[0] = run(objects, callback));
+        GcsProgressDialog.run(tr("delete.title"), callback -> deleted[0] = run(objects, callback));
         return deleted[0];
     }
 
@@ -55,7 +57,7 @@ public final class GcsDeleteService {
                 break;
             }
             NuclrResource object = objects.get(i);
-            cb.onStart("Deleting " + object.getName() + " (" + (i + 1) + "/" + objects.size() + ")");
+            cb.onStart(tr("delete.progress", object.getName(), String.valueOf(i + 1), String.valueOf(objects.size())));
             cb.onProgress(i, objects.size());
 
             String bucket = GcpResource.bucketName(object);

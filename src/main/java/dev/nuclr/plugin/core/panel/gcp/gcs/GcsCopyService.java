@@ -1,5 +1,7 @@
 package dev.nuclr.plugin.core.panel.gcp.gcs;
 
+import static dev.nuclr.plugin.core.panel.gcp.Messages.tr;
+
 import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.io.IOException;
@@ -51,13 +53,13 @@ public final class GcsCopyService {
 
         Path defaultDestination = destinationDir(other);
         if (defaultDestination == null) {
-            showError("Copy is only supported to a local folder.");
+            showError(tr("copy.error.local.only"));
             return;
         }
 
         List<NuclrResource> objects = collectObjects(selectedResources, focusedResource);
         if (objects.isEmpty()) {
-            showError("Select one or more objects to copy (folders are not copied).");
+            showError(tr("copy.error.select.objects"));
             return;
         }
 
@@ -67,17 +69,17 @@ public final class GcsCopyService {
         }
         Path destination = options.destination();
         if (!Files.isDirectory(destination)) {
-            showError("The destination is not a folder:\n" + destination);
+            showError(tr("copy.error.not.folder", destination));
             return;
         }
 
         var failures = new ArrayList<String>();
-        GcsProgressDialog.run("Copy", callback ->
+        GcsProgressDialog.run(tr("copy.title"), callback ->
                 run(objects, destination, options.existing(), callback, failures, context, sourceUuid));
 
         refreshDestination(other, context);
         if (!failures.isEmpty()) {
-            showError("Some objects could not be copied:\n" + String.join("\n", failures));
+            showError(tr("copy.error.objects.failed", String.join("\n", failures)));
         }
     }
 
@@ -92,7 +94,7 @@ public final class GcsCopyService {
                 break;
             }
             NuclrResource object = objects.get(i);
-            cb.onStart("Copying " + object.getName() + " (" + (i + 1) + "/" + objects.size() + ")");
+            cb.onStart(tr("copy.progress", object.getName(), String.valueOf(i + 1), String.valueOf(objects.size())));
 
             Path target = destination.resolve(object.getName());
             boolean append = false;
@@ -222,7 +224,7 @@ public final class GcsCopyService {
 
         if (!GcpResource.isBucket(currentResource) && !GcpResource.isObjectDir(currentResource)) {
             log.warn("GCS accept-copy rejected: destination is not a bucket or object folder: {}", currentResource);
-            showError("Open a bucket to copy files into it.");
+            showError(tr("copy.error.open.bucket"));
             return;
         }
         String bucket = GcpResource.bucketName(currentResource);
@@ -232,7 +234,7 @@ public final class GcsCopyService {
         if (sources.isEmpty()) {
             log.warn("GCS accept-copy rejected: no uploadable files from selected={}, focused={}",
                     describeResources(selectedResources), describeResource(focusedResource));
-            showError("Nothing to copy here (folders are not uploaded).");
+            showError(tr("copy.error.nothing"));
             return;
         }
         log.info("GCS accept-copy sources for gs://{}/{}: {}", bucket, prefix, describeResources(sources));
@@ -248,7 +250,7 @@ public final class GcsCopyService {
                 sources.size(), bucket, prefix, existing.size());
         var failures = new ArrayList<String>();
         int[] uploaded = { 0 };
-        GcsProgressDialog.run("Copy", callback ->
+        GcsProgressDialog.run(tr("copy.title"), callback ->
                 uploaded[0] = runUpload(sources, bucket, prefix, options.existing(), existing, callback, failures));
 
         if (uploaded[0] > 0) {
@@ -259,7 +261,7 @@ public final class GcsCopyService {
             }
         }
         if (!failures.isEmpty()) {
-            showError("Some files could not be copied:\n" + String.join("\n", failures));
+            showError(tr("copy.error.files.failed", String.join("\n", failures)));
         }
     }
 
@@ -277,7 +279,7 @@ public final class GcsCopyService {
             }
             NuclrResource source = sources.get(i);
             String name = source.getName();
-            cb.onStart("Copying " + name + " (" + (i + 1) + "/" + sources.size() + ")");
+            cb.onStart(tr("copy.progress", name, String.valueOf(i + 1), String.valueOf(sources.size())));
 
             Predicate<String> existsAtDest = taken::contains;
             if (existsAtDest.test(name)) {
@@ -441,7 +443,7 @@ public final class GcsCopyService {
 
     /** Short description of the copy set for the setup dialog: the single name, or "N items". */
     private static String header(List<NuclrResource> objects) {
-        return objects.size() == 1 ? objects.get(0).getName() : objects.size() + " items";
+        return objects.size() == 1 ? objects.get(0).getName() : tr("copy.items", String.valueOf(objects.size()));
     }
 
     private static String describeResources(List<NuclrResource> resources) {
@@ -479,6 +481,6 @@ public final class GcsCopyService {
 
     private static void showError(String message) {
         SwingUtilities.invokeLater(() ->
-                JOptionPane.showMessageDialog(null, message, "Copy", JOptionPane.ERROR_MESSAGE));
+                JOptionPane.showMessageDialog(null, message, tr("copy.title"), JOptionPane.ERROR_MESSAGE));
     }
 }

@@ -1,5 +1,7 @@
 package dev.nuclr.plugin.core.panel.gcp;
 
+import static dev.nuclr.plugin.core.panel.gcp.Messages.tr;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URLEncoder;
@@ -198,22 +200,22 @@ public final class GcpResource extends NuclrResource {
 
 	/** The Cloud Storage service entry under a project. */
 	static GcpResource gcsService(String projectId) {
-		return service(projectId, SERVICE_GCS, "GCS", "Cloud Storage buckets");
+		return service(projectId, SERVICE_GCS, "GCS", tr("desc.gcs"));
 	}
 
 	/** The Pub/Sub service entry under a project. */
 	static GcpResource pubsubService(String projectId) {
-		return service(projectId, SERVICE_PUBSUB, "Pub/Sub", "Topics and subscriptions");
+		return service(projectId, SERVICE_PUBSUB, "Pub/Sub", tr("desc.pubsub"));
 	}
 
 	/** The Secret Manager service entry under a project. */
 	static GcpResource secretManagerService(String projectId) {
-		return service(projectId, SERVICE_SECRET, "Secret Manager", "Secrets and versions");
+		return service(projectId, SERVICE_SECRET, "Secret Manager", tr("desc.secret.manager"));
 	}
 
 	/** The Compute Engine service entry under a project. */
 	static GcpResource computeEngineService(String projectId) {
-		return service(projectId, SERVICE_COMPUTE, "Compute Engine", "Virtual machines and infrastructure");
+		return service(projectId, SERVICE_COMPUTE, "Compute Engine", tr("desc.compute"));
 	}
 
 	/** The GKE (Google Kubernetes Engine) service entry under a project. */
@@ -243,37 +245,37 @@ public final class GcpResource extends NuclrResource {
 
 	/** The Virtual Machines category (browsable) under a project's Compute Engine service. */
 	static GcpResource computeVirtualMachines(String projectId) {
-		return computeCategory(projectId, COMPUTE_VMS, "Virtual Machines", "VM instances");
+		return computeCategory(projectId, COMPUTE_VMS, "Virtual Machines", tr("desc.compute.vms"));
 	}
 
 	/** The Storage category (browsable) under a project's Compute Engine service. */
 	static GcpResource computeStorage(String projectId) {
-		return computeCategory(projectId, COMPUTE_STORAGE, "Storage", "Disks, snapshots, and images");
+		return computeCategory(projectId, COMPUTE_STORAGE, "Storage", tr("desc.compute.storage"));
 	}
 
 	/** The Instance Groups category (browsable) under a project's Compute Engine service. */
 	static GcpResource computeInstanceGroups(String projectId) {
-		return computeCategory(projectId, COMPUTE_INSTANCE_GROUPS, "Instance Groups", "Managed and unmanaged instance groups");
+		return computeCategory(projectId, COMPUTE_INSTANCE_GROUPS, "Instance Groups", tr("desc.instance.groups"));
 	}
 
 	/** The VM Extension Manager category (browsable) under a project's Compute Engine service. */
 	static GcpResource computeExtensionManager(String projectId) {
-		return computeCategory(projectId, COMPUTE_EXTENSION_MANAGER, "VM Extension Manager", "Manage VM extensions");
+		return computeCategory(projectId, COMPUTE_EXTENSION_MANAGER, "VM Extension Manager", tr("desc.compute.extension.manager"));
 	}
 
 	/** The VM Manager category (browsable) under a project's Compute Engine service. */
 	static GcpResource computeVmManager(String projectId) {
-		return computeCategory(projectId, COMPUTE_VM_MANAGER, "VM Manager", "OS patch, config, and inventory");
+		return computeCategory(projectId, COMPUTE_VM_MANAGER, "VM Manager", tr("desc.compute.vm.manager"));
 	}
 
 	/** The Bare Metal Solution category (browsable) under a project's Compute Engine service. */
 	static GcpResource computeBareMetalSolution(String projectId) {
-		return computeCategory(projectId, COMPUTE_BARE_METAL, "Bare Metal Solution", "Bare-metal infrastructure");
+		return computeCategory(projectId, COMPUTE_BARE_METAL, "Bare Metal Solution", tr("desc.compute.bare.metal"));
 	}
 
 	/** The Settings category (browsable) under a project's Compute Engine service. */
 	static GcpResource computeSettings(String projectId) {
-		return computeCategory(projectId, COMPUTE_SETTINGS, "Settings", "Compute Engine settings");
+		return computeCategory(projectId, COMPUTE_SETTINGS, "Settings", tr("desc.compute.settings"));
 	}
 
 	/**
@@ -298,17 +300,17 @@ public final class GcpResource extends NuclrResource {
 
 	/** The Resources management category (browsable) under a project's GKE service. */
 	static GcpResource gkeResourcesManagement(String projectId) {
-		return gkeCategory(projectId, GKE_RESOURCES, "Resources management", "Clusters and workloads");
+		return gkeCategory(projectId, GKE_RESOURCES, "Resources management", tr("desc.gke.resources"));
 	}
 
 	/** The Clusters category (browsable, live-fetched) under GKE Resources management. */
 	static GcpResource gkeClusters(String projectId) {
-		return gkeCategory(projectId, GKE_CLUSTERS, "Clusters", "GKE clusters");
+		return gkeCategory(projectId, GKE_CLUSTERS, "Clusters", tr("desc.gke.clusters"));
 	}
 
 	/** The Workloads category (browsable, live-fetched) under GKE Resources management. */
 	static GcpResource gkeWorkloads(String projectId) {
-		return gkeCategory(projectId, GKE_WORKLOADS, "Workloads", "Deployed workloads");
+		return gkeCategory(projectId, GKE_WORKLOADS, "Workloads", tr("desc.gke.workloads"));
 	}
 
 	/** The synthetic ".." entry that navigates from a GKE category back to the GKE service. */
@@ -446,12 +448,12 @@ public final class GcpResource extends NuclrResource {
 
 	/** The Topics category under a project's Pub/Sub service. */
 	static GcpResource pubsubTopics(String projectId) {
-		return pubsubCategory(projectId, PUBSUB_TOPICS, "Topics", "Pub/Sub topics");
+		return pubsubCategory(projectId, PUBSUB_TOPICS, "Topics", tr("desc.pubsub.topics"));
 	}
 
 	/** The Subscriptions category under a project's Pub/Sub service. */
 	static GcpResource pubsubSubscriptions(String projectId) {
-		return pubsubCategory(projectId, PUBSUB_SUBSCRIPTIONS, "Subscriptions", "Pub/Sub subscriptions");
+		return pubsubCategory(projectId, PUBSUB_SUBSCRIPTIONS, "Subscriptions", tr("desc.pubsub.subscriptions"));
 	}
 
 	/** A Pub/Sub topic entry (leaf) shown under the Topics category. */
@@ -610,7 +612,7 @@ public final class GcpResource extends NuclrResource {
 		r.getMetadata().put(PROJECT_ID, projectId);
 		r.getMetadata().put(BUCKET, bucket);
 		r.getMetadata().put(PREFIX, prefix);
-		r.rename("▼ Load more…");
+		r.rename(tr("load.more"));
 		r.getMetadata().put("Size", "-");
 		r.getMetadata().put("Storage class", "-");
 		r.getMetadata().put("Updated", "-");
@@ -624,7 +626,7 @@ public final class GcpResource extends NuclrResource {
 	 */
 	static GcpResource searchResults(List<NuclrResource> hits, String title, NuclrResource origin) {
 		GcpResource r = new GcpResource();
-		String label = title == null || title.isBlank() ? "Search results" : title;
+		String label = title == null || title.isBlank() ? tr("search.results") : title;
 		r.setUuid(ROOT_UUID + "search/" + UUID.randomUUID());
 		r.setFullPath(r.getUuid());
 		r.setFolder(true);
@@ -650,7 +652,7 @@ public final class GcpResource extends NuclrResource {
 
 	static String searchTitle(NuclrResource resource) {
 		String title = metaString(resource, SEARCH_TITLE);
-		return title == null ? "Search results" : title;
+		return title == null ? tr("search.results") : title;
 	}
 
 	static NuclrResource searchOrigin(NuclrResource resource) {

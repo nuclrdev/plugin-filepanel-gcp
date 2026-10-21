@@ -1,5 +1,7 @@
 package dev.nuclr.plugin.core.panel.gcp.gcs;
 
+import static dev.nuclr.plugin.core.panel.gcp.Messages.tr;
+
 import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.awt.BorderLayout;
@@ -83,10 +85,10 @@ final class GcsCopyConflictDialog {
     private Resolution ask(String targetLabel, String newDetail, String existingDetail, String defaultRenameName) {
 
         Window owner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow();
-        JDialog dialog = new JDialog(owner, "Warning", JDialog.ModalityType.APPLICATION_MODAL);
+        JDialog dialog = new JDialog(owner, tr("conflict.title"), JDialog.ModalityType.APPLICATION_MODAL);
         dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
 
-        JLabel title = new JLabel("File already exists", JLabel.CENTER);
+        JLabel title = new JLabel(tr("conflict.heading"), JLabel.CENTER);
         title.setFont(title.getFont().deriveFont(Font.BOLD));
 
         JPanel header = new JPanel(new BorderLayout(0, 4));
@@ -95,18 +97,18 @@ final class GcsCopyConflictDialog {
 
         JPanel info = new JPanel(new GridLayout(2, 1, 0, 2));
         info.setBorder(BorderFactory.createEmptyBorder(8, 0, 8, 0));
-        info.add(detailRow("New", newDetail));
-        info.add(detailRow("Existing", existingDetail));
+        info.add(detailRow(tr("conflict.new"), newDetail));
+        info.add(detailRow(tr("conflict.existing"), existingDetail));
 
-        JCheckBox remember = new JCheckBox("Remember choice");
+        JCheckBox remember = new JCheckBox(tr("conflict.remember"));
 
         final Resolution[] picked = new Resolution[1];
 
-        JButton overwrite = new JButton("Overwrite");
-        JButton skip = new JButton("Skip");
-        JButton rename = new JButton("Rename");
-        JButton append = new JButton("Append");
-        JButton cancel = new JButton("Cancel");
+        JButton overwrite = new JButton(tr("conflict.overwrite"));
+        JButton skip = new JButton(tr("common.skip"));
+        JButton rename = new JButton(tr("conflict.rename"));
+        JButton append = new JButton(tr("conflict.append"));
+        JButton cancel = new JButton(tr("common.cancel"));
 
         overwrite.addActionListener(e -> {
             picked[0] = Resolution.of(Action.OVERWRITE);
@@ -184,19 +186,19 @@ final class GcsCopyConflictDialog {
     /** @return the chosen new name, or {@code null} if the rename was cancelled. */
     private String promptRename(Window owner, String defaultName) {
 
-        JDialog dialog = new JDialog(owner, "Rename", JDialog.ModalityType.APPLICATION_MODAL);
+        JDialog dialog = new JDialog(owner, tr("rename.title"), JDialog.ModalityType.APPLICATION_MODAL);
         dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
 
         JTextField field = new JTextField(defaultName == null ? "" : defaultName, 40);
 
         JPanel top = new JPanel(new BorderLayout(0, 4));
-        top.add(new JLabel("New name:"), BorderLayout.NORTH);
+        top.add(new JLabel(tr("rename.prompt")), BorderLayout.NORTH);
         top.add(field, BorderLayout.CENTER);
 
         final String[] result = new String[1];
 
-        JButton ok = new JButton("OK");
-        JButton cancel = new JButton("Cancel");
+        JButton ok = new JButton(tr("common.ok"));
+        JButton cancel = new JButton(tr("common.cancel"));
         ok.addActionListener(e -> {
             String text = field.getText() == null ? "" : field.getText().trim();
             if (text.isEmpty()) {

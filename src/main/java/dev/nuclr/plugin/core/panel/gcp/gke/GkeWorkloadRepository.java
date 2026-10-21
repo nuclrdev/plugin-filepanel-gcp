@@ -1,5 +1,7 @@
 package dev.nuclr.plugin.core.panel.gcp.gke;
 
+import static dev.nuclr.plugin.core.panel.gcp.Messages.tr;
+
 import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.io.IOException;
@@ -52,7 +54,7 @@ public class GkeWorkloadRepository {
             } catch (KubectlCli.KubectlNotFoundException e) {
                 // kubectl missing is a hard, project-wide failure — no cluster can be queried.
                 return new Result.Err(new GcpError.CommandFailed(
-                        "kubectl not found on PATH. Install it (e.g. gcloud components install kubectl) to list workloads."));
+                        tr("error.kubectl.not.found")));
             } catch (KubectlCli.KubectlTimeoutException e) {
                 firstError = firstError == null ? new GcpError.Timeout() : firstError;
                 continue;

@@ -1,5 +1,7 @@
 package dev.nuclr.plugin.core.panel.gcp.gcs;
 
+import static dev.nuclr.plugin.core.panel.gcp.Messages.tr;
+
 import dev.nuclr.plugin.core.panel.gcp.*;
 
 /**
@@ -28,6 +30,6 @@ public record GcsFindRequest(
 
     public String title() {
         String p = namePattern == null || namePattern.isBlank() ? "*" : namePattern;
-        return "Find: " + p + " in gs://" + bucket + "/" + prefix;
+        return tr("find.request.title", p, "gs://" + bucket + "/" + prefix);
     }
 }

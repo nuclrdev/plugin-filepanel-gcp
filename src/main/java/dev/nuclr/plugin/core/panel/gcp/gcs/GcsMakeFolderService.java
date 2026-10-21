@@ -1,5 +1,7 @@
 package dev.nuclr.plugin.core.panel.gcp.gcs;
 
+import static dev.nuclr.plugin.core.panel.gcp.Messages.tr;
+
 import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.util.Set;
@@ -17,8 +19,6 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public final class GcsMakeFolderService {
-
-    private static final String DIALOG_TITLE = "Make Folder";
 
     private final GcsFolderCreator creator = new GcsFolderCreator();
 
@@ -39,12 +39,12 @@ public final class GcsMakeFolderService {
             return null;
         }
         if (isInvalidSingleFolderName(folderName)) {
-            showError("Folder name cannot contain path separators.");
+            showError(tr("make.folder.separators"));
             return null;
         }
         if (existingNames != null
                 && (existingNames.contains(folderName) || existingNames.contains(folderName + "/"))) {
-            showError("A file or folder with that name already exists.");
+            showError(tr("make.folder.exists"));
             return null;
         }
 
@@ -70,12 +70,12 @@ public final class GcsMakeFolderService {
     private static String promptFolderName() {
         final String[] result = new String[1];
         runOnEdtAndWait(() -> result[0] = JOptionPane.showInputDialog(
-                null, "Folder name:", DIALOG_TITLE, JOptionPane.PLAIN_MESSAGE));
+                null, tr("make.folder.prompt"), tr("make.folder.title"), JOptionPane.PLAIN_MESSAGE));
         return result[0];
     }
 
     private static void showError(String message) {
-        runOnEdtAndWait(() -> JOptionPane.showMessageDialog(null, message, DIALOG_TITLE, JOptionPane.ERROR_MESSAGE));
+        runOnEdtAndWait(() -> JOptionPane.showMessageDialog(null, message, tr("make.folder.title"), JOptionPane.ERROR_MESSAGE));
     }
 
     private static void runOnEdtAndWait(Runnable runnable) {

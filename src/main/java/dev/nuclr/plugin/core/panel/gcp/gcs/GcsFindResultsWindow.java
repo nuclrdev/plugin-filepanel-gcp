@@ -1,5 +1,7 @@
 package dev.nuclr.plugin.core.panel.gcp.gcs;
 
+import static dev.nuclr.plugin.core.panel.gcp.Messages.tr;
+
 import dev.nuclr.plugin.core.panel.gcp.*;
 
 import java.awt.BorderLayout;
@@ -48,10 +50,10 @@ public final class GcsFindResultsWindow extends JDialog implements GcsFindServic
 
     private final transient DefaultListModel<NuclrResource> model = new DefaultListModel<>();
     private final JList<NuclrResource> list = new JList<>(model);
-    private final JLabel status = new JLabel("Searching…");
-    private final JButton stopButton = new JButton("Stop");
-    private final JButton panelButton = new JButton("Panel");
-    private final JButton closeButton = new JButton("Close");
+    private final JLabel status = new JLabel(tr("find.status.searching"));
+    private final JButton stopButton = new JButton(tr("find.stop"));
+    private final JButton panelButton = new JButton(tr("find.panel"));
+    private final JButton closeButton = new JButton(tr("common.close"));
 
     private final transient Consumer<NuclrResource> onActivate;
     private final transient Consumer<List<NuclrResource>> onSendToPanel;
@@ -61,7 +63,7 @@ public final class GcsFindResultsWindow extends JDialog implements GcsFindServic
 
     public GcsFindResultsWindow(Window owner, GcsFindRequest request, Consumer<NuclrResource> onActivate,
             Consumer<List<NuclrResource>> onSendToPanel) {
-        super(owner, "Find results — " + request.namePattern(), ModalityType.MODELESS);
+        super(owner, tr("find.results.title", request.namePattern()), ModalityType.MODELESS);
         this.onActivate = onActivate;
         this.onSendToPanel = onSendToPanel;
 
@@ -82,7 +84,7 @@ public final class GcsFindResultsWindow extends JDialog implements GcsFindServic
         list.getActionMap().put("find.activate", action(this::activateSelection));
 
         stopButton.addActionListener(e -> stopSearch());
-        panelButton.setToolTipText("Open these results in a temporary panel");
+        panelButton.setToolTipText(tr("find.panel.tooltip"));
         panelButton.setEnabled(false);
         panelButton.addActionListener(e -> sendResultsToPanel());
         closeButton.addActionListener(e -> dispose());
@@ -138,19 +140,16 @@ public final class GcsFindResultsWindow extends JDialog implements GcsFindServic
     @Override
     public void onComplete(long scanned, long matched, boolean cancelled) {
         finished = true;
-        status.setText("Search " + (cancelled ? "stopped" : "complete") + " — "
-                + model.getSize() + " match(es), " + scanned + " scanned");
+        status.setText(tr(cancelled ? "find.status.stopped" : "find.status.complete",
+                String.valueOf(model.getSize()), String.valueOf(scanned)));
         stopButton.setEnabled(false);
     }
 
     private void refreshStatus(long scanned) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(model.getSize()).append(" match(es)");
-        if (scanned >= 0) {
-            sb.append(" — ").append(scanned).append(" scanned");
-        }
-        sb.append(" — searching…");
-        status.setText(sb.toString());
+        String matches = String.valueOf(model.getSize());
+        status.setText(scanned >= 0
+                ? tr("find.status.matches.scanned.searching", matches, String.valueOf(scanned))
+                : tr("find.status.matches.searching", matches));
     }
 
     private void stopSearch() {
