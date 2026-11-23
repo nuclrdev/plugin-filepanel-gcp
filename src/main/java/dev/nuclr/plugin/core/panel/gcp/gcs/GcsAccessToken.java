@@ -8,7 +8,7 @@ import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Supplies an OAuth2 access token for the GCS REST API, obtained once via
+ * Supplies an OAuth2 access token for the Google REST APIs (GCS, Firestore, Datastore), obtained once via
  * {@code gcloud auth print-access-token} and cached until shortly before it expires.
  *
  * <p>Shelling out to gcloud costs ~1s of Python startup, so doing it per download is what made
@@ -16,7 +16,7 @@ import lombok.extern.slf4j.Slf4j;
  * HTTPS GETs with no gcloud process at all.
  */
 @Slf4j
-final class GcsAccessToken {
+public final class GcsAccessToken {
 
     /** Refresh well before the ~1h expiry to avoid races with token expiration. */
     private static final long TTL_MS = 50 * 60_000L;
@@ -32,7 +32,7 @@ final class GcsAccessToken {
      * Returns a usable access token, fetching a fresh one if the cache is empty/stale or
      * {@code forceRefresh} is set (e.g. after a 401).
      */
-    static synchronized String get(boolean forceRefresh) throws IOException {
+    public static synchronized String get(boolean forceRefresh) throws IOException {
         long now = System.currentTimeMillis();
         if (!forceRefresh && token != null && now < expiresAtMs) {
             return token;
@@ -43,7 +43,7 @@ final class GcsAccessToken {
     }
 
     /** Drop the cached token so the next {@link #get} re-fetches. */
-    static synchronized void invalidate() {
+    public static synchronized void invalidate() {
         token = null;
         expiresAtMs = 0L;
     }

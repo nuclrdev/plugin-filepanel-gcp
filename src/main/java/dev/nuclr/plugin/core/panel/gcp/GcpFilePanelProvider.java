@@ -178,6 +178,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 	private final GcpPubsubRepository pubsubRepository = new GcpPubsubRepository();
 	private final GkeClusterRepository gkeClusterRepository = new GkeClusterRepository();
 	private final GkeWorkloadRepository gkeWorkloadRepository = new GkeWorkloadRepository();
+	private final FirestoreBrowser firestore = new FirestoreBrowser();
 
 	private NuclrPluginContext context;
 	private boolean focused;
@@ -247,6 +248,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		bucketCache.clear();
 		clusterCache.clear();
 		workloadCache.clear();
+		firestore.reset();
 		closePager();
 		clearObjectListing();
 		GcsTempFiles.cleanup();
@@ -391,6 +393,9 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 				clearObjectListing();
 			}
 		}
+		if (!FirestoreResource.isFirestore(resourceToOpen)) {
+			firestore.reset();
+		}
 
 		if (GcpResource.isSearchResults(resourceToOpen)) {
 			this.currentResource = resourceToOpen;
@@ -436,6 +441,10 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			if (GcpResource.SERVICE_GKE.equals(serviceType)) {
 				this.currentResource = GcpResource.gkeService(projectId);
 				return listGke(projectId, sink);
+			}
+			if (GcpResource.SERVICE_FIRESTORE.equals(serviceType)) {
+				this.currentResource = GcpResource.firestoreService(projectId);
+				return firestore.listDatabases(projectId, cancelled, sink);
 			}
 			// Any other (future) service is not browsable yet; show only the "..".
 			this.currentResource = GcpResource.pubsubService(projectId);
@@ -502,6 +511,12 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			return listGkeResourcesManagement(projectId, sink);
 		}
 
+		// A Firestore database, collection, document, namespace or kind, or its "Load more".
+		if (FirestoreResource.isFirestore(resourceToOpen)) {
+			this.currentResource = firestore.location(resourceToOpen);
+			return firestore.open(resourceToOpen, cancelled, sink);
+		}
+
 		// Entering a bucket (prefix "") or a sub-folder: list its immediate objects/folders.
 		if (GcpResource.isBucket(resourceToOpen) || GcpResource.isObjectDir(resourceToOpen)) {
 			String projectId = GcpResource.projectId(resourceToOpen);
@@ -553,7 +568,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		return data;
 	}
 
-	/** A project lists the GCP services it exposes ({@code ..}, GCS, Pub/Sub, Compute Engine, Secret Manager). */
+	/** A project lists the GCP services it exposes ({@code ..}, GCS, Firestore, Pub/Sub, Compute Engine, GKE, Secret Manager). */
 	private NuclrResourceData listServices(String projectId, EntrySink sink) {
 
 		var data = new NuclrResourceData();
@@ -564,6 +579,7 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 
 		add(data, sink, GcpResource.parent()); // ".." back to the project list
 		add(data, sink, GcpResource.gcsService(projectId));
+		add(data, sink, GcpResource.firestoreService(projectId));
 		add(data, sink, GcpResource.pubsubService(projectId));
 		add(data, sink, GcpResource.computeEngineService(projectId));
 		add(data, sink, GcpResource.gkeService(projectId));
@@ -1307,7 +1323,11 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 			NuclrResource focusedResource, Map<String, Object> data, NuclrPluginCallback callback) {
 
 		if (ACTION_PATH_OPENED.equals(actionType)) {
-			openInConsole(focusedResource);
+			if (FirestoreResource.opensDocument(focusedResource)) {
+				openFirestoreDocument(focusedResource);
+			} else {
+				openInConsole(focusedResource);
+			}
 			return;
 		}
 
@@ -1519,6 +1539,17 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		context.getEventBus().emit(this, ACTION_PATH_OPENED, payload);
 	}
 
+	/** Step from a document leaf in a collection listing into the document's folder (its fields and subcollections). */
+	private void openFirestoreDocument(NuclrResource leaf) {
+		if (context == null || context.getEventBus() == null) {
+			return;
+		}
+		var payload = new HashMap<String, Object>();
+		payload.put("resource", FirestoreResource.document(
+				GcpResource.projectId(leaf), FirestoreResource.database(leaf), FirestoreResource.path(leaf)));
+		context.getEventBus().emit(this, ACTION_PATH_OPENED, payload);
+	}
+
 	/** Send the whole result set to a temporary "search results" panel in the focused pane. */
 	private void openResultsInTempPanel(List<NuclrResource> hits, GcsFindRequest request, NuclrResource origin) {
 		if (context == null || context.getEventBus() == null) {
@@ -1608,6 +1639,9 @@ public class GcpFilePanelProvider implements FilePanelNuclrPlugin {
 		if (GcpResource.isBucket(currentResource) || GcpResource.isObjectDir(currentResource)) {
 			return "GCP: " + GcpResource.projectId(currentResource) + " / GCS / gs://"
 					+ GcpResource.bucketName(currentResource) + "/" + GcpResource.objectPrefix(currentResource);
+		}
+		if (FirestoreResource.isFirestore(currentResource)) {
+			return "GCP: " + GcpResource.projectId(currentResource) + " / " + FirestoreResource.locationText(currentResource);
 		}
 		if (GcpResource.isPubsubCategory(currentResource)) {
 			return "GCP: " + GcpResource.projectId(currentResource) + " / Pub/Sub / " + currentResource.getName();

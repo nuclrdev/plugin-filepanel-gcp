@@ -2,6 +2,7 @@ package dev.nuclr.plugin.core.panel.gcp;
 
 import static dev.nuclr.plugin.core.panel.gcp.Messages.tr;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URLEncoder;
@@ -85,7 +86,7 @@ public final class GcpResource extends NuclrResource {
 	static final String COMPUTE_BARE_METAL = "bare-metal";
 	static final String COMPUTE_SETTINGS = "settings";
 
-	/** Metadata key holding the Cloud Console URL a {@link #KIND_CONSOLE_LINK} entry opens when activated. */
+	/** Metadata key holding the Cloud Console URL a {@link #KIND_CONSOLE_LINK} entry (or a Firestore document) opens when activated. */
 	static final String CONSOLE_URL = "nuclr.gcp.console.url";
 
 	/** Metadata key identifying which browsable GKE category a {@link #KIND_GKE_CATEGORY} node is. */
@@ -111,6 +112,7 @@ public final class GcpResource extends NuclrResource {
 	static final String SERVICE_SECRET = "secretmanager";
 	static final String SERVICE_COMPUTE = "compute";
 	static final String SERVICE_GKE = "gke";
+	static final String SERVICE_FIRESTORE = "firestore";
 
 	/** Metadata: bucket name and object-key prefix on bucket / object-dir / load-more resources. */
 	static final String BUCKET = "nuclr.gcp.bucket";
@@ -118,6 +120,9 @@ public final class GcpResource extends NuclrResource {
 
 	/** Metadata: full object key (prefix + name) on object resources, for self-download. */
 	static final String OBJECT_KEY = "nuclr.gcp.objectKey";
+
+	/** Metadata: in-memory content a virtual leaf streams from {@link #openInputStream} (e.g. a Firestore document as JSON). */
+	static final String CONTENT = "nuclr.gcp.content";
 
 	/** Stable identifier of the single GCP root mount. */
 	static final String ROOT_UUID = "gcp://";
@@ -221,6 +226,40 @@ public final class GcpResource extends NuclrResource {
 	/** The GKE (Google Kubernetes Engine) service entry under a project. */
 	static GcpResource gkeService(String projectId) {
 		return service(projectId, SERVICE_GKE, "GKE", "Google Kubernetes Engine");
+	}
+
+	/** The Firestore service entry under a project (Native and Datastore mode databases). */
+	static GcpResource firestoreService(String projectId) {
+		return service(projectId, SERVICE_FIRESTORE, "Firestore", tr("desc.firestore"));
+	}
+
+	/**
+	 * A bare virtual entry of the given kind, for node types built outside this class (see
+	 * {@link FirestoreResource}). The caller adds the kind-specific metadata.
+	 */
+	static GcpResource virtual(String uuid, String kind, String projectId, String name, boolean folder) {
+		GcpResource r = new GcpResource();
+		r.setUuid(uuid);
+		r.setFullPath(uuid);
+		r.setFolder(folder);
+		r.getMetadata().put(KIND, kind);
+		r.getMetadata().put(PROJECT_ID, projectId);
+		r.rename(name);
+		return r;
+	}
+
+	/** Turn this entry into the synthetic ".." that navigates to it. */
+	GcpResource asParent() {
+		rename("..");
+		return this;
+	}
+
+	/** Attach the text this leaf streams when viewed, and report its size. */
+	GcpResource content(String text) {
+		byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+		getMetadata().put(CONTENT, bytes);
+		setLength(bytes.length);
+		return this;
 	}
 
 	/**
@@ -555,6 +594,9 @@ public final class GcpResource extends NuclrResource {
 	 */
 	@Override
 	public InputStream openInputStream(OpenOption... options) throws Exception {
+		if (getMetadata().get(CONTENT) instanceof byte[] bytes) {
+			return new ByteArrayInputStream(bytes);
+		}
 		if (!KIND_OBJECT.equals(getMetadata().get(KIND))) {
 			return super.openInputStream(options);
 		}
@@ -854,6 +896,9 @@ public final class GcpResource extends NuclrResource {
 		}
 		if (url == null) {
 			url = consoleLinkUrl(resource);
+		}
+		if (url == null) {
+			url = FirestoreResource.consoleUrl(resource);
 		}
 		return url;
 	}
